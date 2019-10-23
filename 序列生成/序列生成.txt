@@ -1,0 +1,5 @@
+		int count = 12;
+		// 生成三位数字
+		DecimalFormat df = new DecimalFormat("000");
+		String str = df.format(count);
+		System.out.println(str);
