@@ -1,0 +1,68 @@
+## 悲观锁的使用
+
+2018-12-28在同事代码中,看到了mysql中for update的使用
+
+对此,整理一下for update的使用方式
+
+##### 使用范围
+
+> 1.在mysql中,for update只能使用在InnoDB数据库引擎中;InnoDB默认使用的是行级锁;(**当有明确主键的时候,使用的是行级锁;否则使用表级锁**)
+
+例子
+
+```sql
+例子: 假设表foods ，存在有id跟name、status三个字段，id是主键，status有索引。
+
+例1: (明确指定主键，并且有此记录，行级锁) 
+SELECT * FROM foods WHERE id=1 FOR UPDATE; 
+SELECT * FROM foods WHERE id=1 and name=’咖啡色的羊驼’ FOR UPDATE;
+
+例2: (明确指定主键/索引，若查无此记录，无锁) 
+SELECT * FROM foods WHERE id=-1 FOR UPDATE;
+
+例3: (无主键/索引，表级锁) 
+SELECT * FROM foods WHERE name=’咖啡色的羊驼’ FOR UPDATE;
+
+例4: (主键/索引不明确，表级锁) 
+SELECT * FROM foods WHERE id<>’3’ FOR UPDATE; 
+SELECT * FROM foods WHERE id LIKE ‘3’ FOR UPDATE;
+--------------------- 
+```
+
+1.**for update 仅适用于InnoDB，并且必须开启事务，在begin与commit之间才生效。**
+
+2.**要测试for update的锁表情况，可以利用MySQL的Command Mode，开启二个视窗来做测试**
+
+
+
+##### 使用特性
+
+在使用for update
+
+> 1. 当开启一个事务,使用for update 的时候,另一个事务的for update 会一直等着直到第一个事务结束
+> 2. 表级锁时,不管是否查到记录;都会进行锁定整个表
+
+
+
+
+
+
+
+##### 其它扩展
+
+for update可以在多表关联的时候使用;导致多张表的行独占锁
+
+
+
+
+
+mysql处理并发事务保证一致性
+
+https://www.cnblogs.com/houweijian/p/5869243.html
+
+
+
+乐观锁的使用
+
+http://www.cnblogs.com/laoyeye/p/8097684.html
+

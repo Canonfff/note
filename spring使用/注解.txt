@@ -1,0 +1,4 @@
+@Qualifier("authService")
+
+使用场景:
+当一个接口有两个实现类的时候,此时;qualifier就可以派上用场了,因为在spring注入的时候,不知道该注入哪个类,使用qualifier注解可以告诉spring此时应该注入哪个类;

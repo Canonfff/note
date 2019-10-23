@@ -1,0 +1,178 @@
+### 单例模式
+
+##### **什么是单例模式?**
+
+简单来说就是只有一个实例...这样减少系统资源的浪费
+
+
+
+##### 怎么创建单例模式?
+
+**总得来说,单例模式有两种创建方式:**
+
+> 1.懒汉式 ---->对应的需要的时候才创建
+>
+> 2.饿汉式 ---->一开始的时候就创建
+
+
+
+**相同点:**
+
+> 单例类必须要有一个私有的构造函数,不允许其它类通过显式创建
+>
+> instance 成员变量和 uniqueInstance 方法必须是 static 的
+
+
+
+总的来说创建单例一共有 5种方式
+
+1.饿汉式
+
+```java
+package com.canon.singleton;
+
+/**
+ * @program: dataStructuresAndAlgorithms
+ * @Auther: canon
+ * @Date: 2019/2/26 14:37
+ * @Description:饿汉式(线程安全)
+ */
+public class Singleton01 {
+    private static Singleton01 instance = new Singleton01();
+    private Singleton01() {}
+    public static Singleton01 getInstance() {
+        return instance;
+    }
+}
+
+
+```
+
+
+
+2.懒汉线程安全
+
+```java
+package com.canon.singleton;
+
+/**
+ * @program: dataStructuresAndAlgorithms
+ * @Auther: canon
+ * @Date: 2019/2/26 14:46
+ * @Description:懒汉式(加锁,线程安全)
+ */
+public class Singleton03 {
+
+    private static Singleton03 instance;
+
+    private Singleton03() {}
+
+    /**
+     * synchronized 偏重量级锁;这样会有一些性能问题
+     * @return
+     */
+    public synchronized Singleton03 getInstance() {
+        if (instance == null) {
+            instance = new Singleton03();
+        }
+        return instance;
+    }
+}
+
+```
+
+
+
+3.懒汉双重检验锁
+
+```java
+package com.canon.singleton;
+
+/**
+ * @program: dataStructuresAndAlgorithms
+ * @Auther: canon
+ * @Date: 2019/2/26 14:51
+ * @Description:懒汉式,双重检验锁
+ */
+public class Singleton04 {
+    private static Singleton04 instance;
+
+    private Singleton04() {
+
+    }
+
+    public static Singleton04 getInstance() {
+        if (instance == null) {
+            synchronized (Singleton04.class) {
+                if (instance == null) {
+                    instance = new Singleton04();
+                }
+            }
+        }
+        return instance;
+    }
+}
+
+```
+
+
+
+4.懒汉静态内部类
+
+```java
+package com.canon.singleton;
+
+/**
+ * @program: dataStructuresAndAlgorithms
+ * @Auther: canon
+ * @Date: 2019/2/26 14:58
+ * @Description:懒汉式,静态内部类
+ */
+public class Singleton05 {
+    private static class SingletonHolder {
+
+        private static final Singleton05 INSTANCE = new Singleton05();
+
+    }
+    private Singleton05() {}
+
+    public static Singleton05 getInstance() {
+        return SingletonHolder.INSTANCE;
+    }
+
+
+}
+
+```
+
+
+
+5.枚举方式
+
+```java
+package com.canon.singleton;
+
+/**
+ * @program: dataStructuresAndAlgorithms
+ * @Auther: canon
+ * @Date: 2019/2/26 15:06
+ * @Description:单例模式,枚举方式
+ */
+public enum  Singleton06 {
+    instance;
+
+}
+
+```
+
+
+
+
+
+经过查阅很多资料;
+
+一致认为枚举无可挑剔
+
+参考网址
+
+https://blog.csdn.net/qq_34337272/article/details/80455972

@@ -1,0 +1,124 @@
+因为业务原因需要初始化一批数据;但是在插入的时候死活都插入不进去;
+
+原来的SQL
+
+```sql
+INSERT INTO role_group_relationship (groupId,
+                                     applyouId,
+                                     applyouCode,
+                                     applyouName,
+                                     legalId,
+                                     legalPerson,
+                                     legalCode,
+                                     projectId,
+                                     projectName,
+                                     signFlag,
+                                     randomFlag,
+                                     authorizeFlag,
+                                     creationBy,
+                                     createTime,
+                                     lastUpdatedBy,
+                                     updateTime,
+                                     voidFlag)
+
+SELECT cast(c.id AS char) groupId,
+       a.applyouId        applyouId,
+       a.applyouCode      applyouCode,
+       a.applyouName      applyouName,
+       a.legalId          legalId,
+       a.legalPerson      legalPerson,
+       a.legalCode        legalCode,
+       a.projectId        projectId,
+       a.projectName      projectName,
+       '0'                signFlag,
+       '0'                randomFlag,
+       '0'                authorizeFlag,
+       40                 creationBy,
+       now()              createTime,
+       40                 lastUpdatedBy,
+       now()              updateTime,
+       1                  voidFlag
+FROM role_group_relationship a
+       INNER JOIN role_group b ON a.groupId  = b.id AND b.systemCode = 'homeplus'
+       INNER JOIN role_group c ON b.name = c.name AND b.code = c.code AND c.systemCode = 'talentApartment'
+WHERE a.voidFlag = 1
+  AND b.voidFlag = 1
+  AND c.voidFlag = 1;
+```
+
+
+
+这个SQL是可以查询出来的,但是在插入的时候怎么都不行;
+
+网上找了无数方法都不行;
+
+后来看到几篇帖子说是数值类型与字符串做比较导致的;
+
+经过排查,终于发现
+
+` a.groupId  = b.id`这里.groupId 是int类型;而与之比较的b.id是varchar类型;所以导致了失败;
+
+一开始总是以为是查询出来后的字段有问题;但是其实问题出现在连接条件这里;
+
+而且这个问题比较难排查的一点是,当我使用limit条件的时候,1条,2条都是可以插入的;
+
+但是大批量就不行;
+
+所以我怀疑是mysql底层会不会先拼装varchar;后来一想应该不是的;
+
+
+
+
+
+
+
+
+
+修改后的sql
+
+
+
+```sql
+INSERT INTO role_group_relationship (groupId,
+                                     applyouId,
+                                     applyouCode,
+                                     applyouName,
+                                     legalId,
+                                     legalPerson,
+                                     legalCode,
+                                     projectId,
+                                     projectName,
+                                     signFlag,
+                                     randomFlag,
+                                     authorizeFlag,
+                                     creationBy,
+                                     createTime,
+                                     lastUpdatedBy,
+                                     updateTime,
+                                     voidFlag)
+
+SELECT cast(c.id AS char) groupId,
+       a.applyouId        applyouId,
+       a.applyouCode      applyouCode,
+       a.applyouName      applyouName,
+       a.legalId          legalId,
+       a.legalPerson      legalPerson,
+       a.legalCode        legalCode,
+       a.projectId        projectId,
+       a.projectName      projectName,
+       '0'                signFlag,
+       '0'                randomFlag,
+       '0'                authorizeFlag,
+       40                 creationBy,
+       now()              createTime,
+       40                 lastUpdatedBy,
+       now()              updateTime,
+       1                  voidFlag
+FROM role_group_relationship a
+       INNER JOIN role_group b ON cast(a.groupId as char) = b.id AND b.systemCode = 'homeplus'
+       INNER JOIN role_group c ON b.name = c.name AND b.code = c.code AND c.systemCode = 'talentApartment'
+WHERE a.voidFlag = 1
+  AND b.voidFlag = 1
+  AND c.voidFlag = 1;
+```
+

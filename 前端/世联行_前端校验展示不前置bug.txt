@@ -1,0 +1,26 @@
+2019-02-15我遇到一个前端bug;这个bug是校验的时候,提示语句在后面导致的;
+
+效果图如下
+
+![1550224017(1)](img\1550224017(1).jpg)
+
+
+
+后来经过问了前端张利,他说这是由于层级关系;
+
+```javascript
+ initTooltip: function () {
+            $('#feeForm input[type="text"],#feeForm select').tooltipster({
+                trigger: 'custom', // default is 'hover' which is no good here
+                onlyOne: false, // allow multiple tips to be open at a time
+                theme:'dialog-tooltipster-tip',
+                position: 'right' // display the tips to the right of the element
+            });
+        },
+```
+
+`theme:'dialog-tooltipster-tip'` 只需要加上这个代码就可以前置;这个代码的作用是令层级关系分层
+
+
+
+![p1](img\p1.png)

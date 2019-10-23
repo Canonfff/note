@@ -1,0 +1,33 @@
+mysql查询分组内最大的一条记录;
+
+我的SQL如下示:
+
+```sql
+SELECT * from aptbc.hd_house_change_log WHERE voidFlag=1 AND changeType='02' GROUP BY roomId HAVING installments = max(installments);
+```
+
+
+
+这样做会有一个问题:
+
+​	SELECT *,max(dateline) as max_line FROM posts GROUP BY  tid HAVING dateline=max(dateline) ORDER BY dateline DESC LIMIT 10
+
+这条语句的预期结果和想象中的并不相同！因为你会发现，分组的结果中大量的记录没有了！为什么？因为 HAVING 是在分组的时候执行的，也就说：在分组的时候加上一个这样的条件：选择出来的 dateline 要和 本组最大的dateline 相等，执行的结果和下面的语句相同：
+
+SELECT *,max(dateline) as max_line FROM posts GROUP BY  tid HAVING count(*)=1 ORDER BY dateline DESC LIMIT 10
+
+看了这条sql语句是不是明白了呢？
+
+dateline=max(dateline) 只有在分组中的记录只有一条的时候才成立，原因很明白吧！只有一条他才会和本组的最大发布时间相等阿，（默认dateline为不重复的值）
+
+原因还是因为 group by 并没有排序功能，所有的这些排序功能只是错觉，所以你最终选出的 dateline 和max(dateline) 永远不可能相等，除非本组的记录只有一条！GROUP BY 在分组的时候，可能是一个一个来找的，发现有相等的tid，去掉，保留第一个发现的那一条记录，所以找出来的 记录永远只是按照默认索引顺序排列的！
+
+
+
+地址:
+
+[](https://www.cnblogs.com/ericyuan/p/8972013.html)
+
+
+
+目前查询了大量的资料,只能通过子查询的方式实现

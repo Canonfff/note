@@ -1,0 +1,190 @@
+同事在开发卡券模块的时候使用多线程去批量创建卡券;
+使用线程池去创建线程;
+ExecutorService executorService = Executors.newFixedThreadPool(3);
+这种方式是创建指定数量的线程
+
+```java
+@Override
+    @Transactional
+    public void generate(final CardApply apply, final List<CardApplyItem> items, final UserContextVO currentUser) {
+        logger.info("卡券生成, 申请编号: {}", apply.getApplyNo());
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                FacadeContext.setUser(currentUser);
+
+                String key = "cardgenerate-" + apply.getApplyNo();
+                boolean absent = cache.putIfAbsent(key, "1", 300);
+                try {
+                    if (!absent) {
+                        logger.warn("已有其他线程在处理该申请, 申请编号: {}", apply.getApplyNo());
+                        return;
+                    }
+                    Integer cardNum = cardMapper.getCardNumByApplyNo(apply.getApplyNo());
+                    if (cardNum != null && cardNum > 0) {
+                        logger.warn("存在对应批次卡券, 不再次生成, 申请编号: {}, 卡券数量: {}", apply.getApplyNo(), cardNum);
+                        return;
+                    }
+
+                    long timeMillis = System.currentTimeMillis();
+
+                    logger.info("卡券生成开始, 申请编号: {}", apply.getApplyNo());
+
+                    Date currentDate = new Date();
+                    List<Card> cards = Lists.newArrayListWithCapacity(batchInsertSize);
+                    List<CardDeductible> deductibles = Lists.newArrayList();
+                    List<CardOperationRecord> records = Lists.newArrayListWithCapacity(batchInsertSize);
+
+                    CardDeductible deductibleTpl = createCardDeductibleTpl(apply, currentDate); // 卡券抵扣款项实体模板
+                    CardOperationRecord recordTpl = createRecordTpl(apply.getUserId(), apply.getFullName(),
+                            apply.getOwCity(), currentDate, CardOperationActionEnum.generate.name, "卡券生成",
+                            apply.getDeptId());
+
+                    for (CardApplyItem item : items) {
+                        Long sequence = getInitSequenceValue(apply, item);// 获取初始序列值
+                        String prefix = genCardNoPrefix(apply, item); // 卡券编号前缀
+                        int num = item.getNum();
+                        List<String> codes = Splitter.on(",").splitToList(item.getDeductibles()); // 卡券抵扣款项集合
+                        Card cardTpl = createCardTpl(apply, item, currentDate); // 卡券实体模板
+                        for (int i = 0; i < num; i++) {
+                            Card card = new Card();
+                            card.setId(commonService.getPrimayKey(PrimaryGenerationStrConstant.OPR_CARD));
+//                            card.setCardNo(prefix + StringUtils.leftPad(sequence.toString(), 4, '0')); // 卡券编号
+                            card.setCardNo(prefix +
+                                    RandomStringGenerator.getRandomLongByLength(3) +
+                                    converSerialNumber(sequence));
+                            cards.add(card);
+
+                            sequence++; // 序列自增
+                            genCardDeductibles(deductibles, card, codes); // 卡券抵扣款项集合
+                            genCardOpeRecord(records, card); // 操作记录
+
+                            if (cards.size() % batchInsertSize == 0) {  // 循环批量插入
+                                batchInsertAndClear(cardTpl, cards, deductibleTpl, deductibles, recordTpl, records);
+                            }
+                        }
+
+                        if (cards.size() > 0) {
+                            batchInsertAndClear(cardTpl, cards, deductibleTpl, deductibles, recordTpl, records);
+                        }
+                    }
+                    long cost = System.currentTimeMillis() - timeMillis;
+                    logger.info("卡券生成结束, 申请编号: {}, 耗时: {}毫秒", apply.getApplyNo(), cost);
+                } finally {
+                    if (absent) {
+                        cache.del(key);
+                    }
+                }
+            }
+        });
+    }
+```
+
+
+
+代码的逻辑控制过程;
+
+> 首先使用redis的putIfAbsent()这个方法;如果已经存在key值;那么会返回false;
+>
+> 在代码中判断了这个key值;因为redis是单线程;所以在多线程环境下;仍然可以保证数据的准确性;(但是这里会不会有问题?)
+>
+> 是否使用锁会更好一些?
+>
+> 这里使用线程池的方式去接口大数据量的问题
+>
+> 
+
+
+
+volatile关键字
+
+这个关键字的作用是保证变量在线程之间数据共享
+
+
+
+
+
+**可重入锁;**
+
+什么特么叫可重入锁?
+
+妈的,还是要搞清楚,不然这一关过不去了
+
+
+
+大概就是说,锁定的时候,加1;然后如果是这条线程再进一次这个方法;那么这个线程就再加1;只有道零的时候才能被其它线程锁持有
+
+
+
+网友回答:
+
+https://www.cnblogs.com/gxyandwmm/p/9387833.html
+
+
+
+
+
+
+
+多线程使用看到了一篇质量还行的文章:
+
+https://github.com/Snailclimb/JavaGuide/blob/master/Java%E7%9B%B8%E5%85%B3/%E5%A4%9A%E7%BA%BF%E7%A8%8B%E7%B3%BB%E5%88%97.md
+
+
+
+我靠,这个多线程简直无聊到爆炸;原地爆炸那种;关键都是那些概念性的知识;令人很崩溃;
+
+也可能与我状态有关;
+
+
+
+手动创建线程池
+
+    public ThreadPoolExecutor(int corePoolSize,
+                              int maximumPoolSize,
+                              long keepAliveTime,
+                              TimeUnit unit,
+                              BlockingQueue<Runnable> workQueue,
+                              ThreadFactory threadFactory,
+                              RejectedExecutionHandler handler) 
+一个良好设计的线程池是这样的： 
+
+1. 核心数和平均任务数对应 
+2. 偶尔抖动，任务数增加，使用有界队列（ArrayBlockingQueue设置大小）来缓冲任务 
+3. max不要太大，比核心数大一些就可以了，前面还有缓冲队列呢。和核心数设置为一样也可以 
+4. 时间的设计按默认的来就行 
+5. 可以有拒绝策略，为什么不能呢？计算机资源是有限的，处理不了的时候抛出异常总比撑爆CPU和内存要好。jdk提供了四种内置策略
+
+a.AbortPolicy，抛出RejectedExecutionException 
+b.CallerRunsPolicy，尝试直接调用任务的run方法 
+c.DiscardOldestPolicy，将丢弃最老的等待中的任务，尝试执行当前任务 
+d.DiscardPolicy，悄悄地丢弃，不抛任何异常
+
+
+
+
+
+这种方式控制的比较细颗粒度;应该有现成的轮子可以使用的
+
+我自己试着按照网上的方式实现了ThreadFactory和RejectedExecutionHandler这两个类;
+
+TheadFactory的作用在于设置线程的一些基本属性;
+
+RejectedExecutionHandler的作用在于线程策略的处理包括对于异常处理;
+
+
+
+
+**个人觉得，抛异常提示下任务提交方，是不错的选择。**
+
+
+
+又是特么锁;老子快被这个锁烦死了(AQS)
+
+AbstractQueuedSynchronizer
+
+
+
+github文章地址
+
+https://github.com/Snailclimb/JavaGuide/blob/master/Java%E7%9B%B8%E5%85%B3/Multithread/AQS.md

@@ -1,0 +1,43 @@
+### 工作流
+
+##### 1.公寓的工作流是怎么工作的?
+
+2019-05-31
+
+今天开始写工作流的笔记,以及在工作流中间遇到的坑;
+
+在出差广州之后,工作流彻底交给了我;之前没有接触过这一块的东西;因此刚开始维护起来有些吃力;
+
+在此之前对工作流几乎一无所知,因此现在对工作流进行一些梳理;
+
+> 公寓工作流是这么实现的,通过一个sdk网关,调用一个独立的web服务workflow-web;workflow-web整合activiti框架;实现了流程引擎;
+>
+> 主要关于SDK很简单主要有两个类:
+>
+> 1.WorkFlowImpl
+>
+> ​	这个类是处理工作流的逻辑;
+>
+> 2.WorkflowCallback
+>
+> ​	这个类是用来回调工作流
+
+
+
+workflow-web这个服务专门构建流程引擎;
+
+其内部的实现其实就是专注于使用activiti框架;围绕这个框架进行功能的实现;
+
+activiti框架专注于实现流程引擎;
+
+
+工作流学习网站
+(流氓兔)
+http://www.kafeitu.me/activiti/2012/03/22/workflow-activiti-action.html
+(官方文档 | 中文版)
+http://www.mossle.com/docs/activiti/index.html#N10AA6
+
+API详解
+https://www.cnblogs.com/liuqing576598117/category/1390451.html
+
+

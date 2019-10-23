@@ -1,0 +1,426 @@
+### String类源码阅读
+
+1.String类是java语言描述字符串的一个类
+
+2.String类是常量,在其创建之后不能修改
+
+3.字符串缓冲区是可变的
+
+4.因为字符串对象是不可变的,所以它们能够被共享
+
+
+
+
+
+
+
+构造函数:
+
+String 类的构造函数都是在说明一个东西;
+
+真正实现String类内部的实际是一个char类型的数组
+
+
+
+构造函数中,作者写道,它们一贯优化的方式是使用位运算符'>>>'这种形式
+
+```text
+>>：带符号右移。正数右移高位补0，负数右移高位补1。比如：
+
+4 >> 1，结果是2；-4 >> 1，结果是-2。-2 >> 1，结果是-1。
+
+>>>：无符号右移。无论是正数还是负数，高位通通补0。
+
+对于正数而言，>>和>>>没区别。
+
+对于负数而言，-2 >>> 1，结果是2147483647（Integer.MAX_VALUE），-1 >>> 1，结果是2147483647（Integer.MAX_VALUE）。
+
+以下代码可以判断两个数的符号是否相等
+
+return ((a >> 31) ^ (b >> 31)) == 0;
+--------------------- 
+作者：Chang_T 
+来源：CSDN 
+原文：https://blog.csdn.net/qq_35402412/article/details/81156020 
+版权声明：本文为博主原创文章，转载请附上博文链接！
+```
+
+```java
+for (int i = offset, j = 0; i < end; i++, j++) {
+            int c = codePoints[i];
+            if (Character.isBmpCodePoint(c))
+                v[j] = (char)c;
+            else
+                Character.toSurrogates(c, v, j++);
+        }
+```
+
+还有这种操作???'
+
+
+
+
+
+移位赋值操作
+
+```java
+int num = 1;
+num <<= 8;
+String s = Integer.toBinaryString(num);// 转成二进制输出
+```
+
+
+
+System.arraycopy(src,srcPos,dest,destPos,length)方法:
+
+参数说明
+
+src:		源数组
+
+srcPos:	源数组起始位置
+
+dest:	目标数组
+
+destPos:	目标数组起始位置
+
+length:	拷贝长度
+
+
+
+equals方法
+
+> 1.首先比较的是地址值
+>
+> 2.其次比较其char数组的长度;再比较char数组的内容
+
+
+
+replace方法
+
+```java
+/**
+     * 为什么这么写?
+     * 其实这里分为了两步走
+     * 第一,将字符串分为了两个部分(以第一个需要替换位置的为分割线)
+     * 第二,定义一个容器去接收不需要替换的部分,后面的部分逐个判断
+     *
+     * @param oldChar
+     * @param newChar
+     * @return
+     */
+    public String replace(char oldChar, char newChar) {
+        // TODO 第一行我强行加上去的;避免报错
+        char[] value = new char[0];
+        if (oldChar != newChar) {
+            int len = value.length;
+            int i = -1;
+            char[] val = value; /* avoid getfield opcode */
+
+            // oldChar需要替换的老的字符
+            while (++i < len) {
+                // 第一个需要替换的字符的位置
+                if (val[i] == oldChar) {
+                    break;
+                }
+            }
+            if (i < len) {
+                // 先准备一个容器,存储0~第一个需要替换的字符的位置
+                char buf[] = new char[len];
+                for (int j = 0; j < i; j++) {
+                    buf[j] = val[j];
+                }
+                // 后续再去进行判断是否要继续替换
+                while (i < len) {
+                    char c = val[i];
+                    buf[i] = (c == oldChar) ? newChar : c;
+                    i++;
+                }
+                // return new String(buf, true);
+                return null;
+            }
+        }
+        return null;
+        // return this;
+    }
+```
+
+
+
+
+
+toLowerCase方法
+
+```java
+/**
+     * scan 这个东西指的是一个标签
+     */
+    private void demo01() {
+        int i = 0;
+        // 可以是scan
+        scan : {
+            for (; i < 100; i++) {
+                if (i == 10) {
+                    break scan;
+                }
+            }
+            System.out.println(i);
+        }
+        System.out.println(i+10);
+        // 也可以是a
+        a : {
+            for (; i < 100; i++) {
+                if (i == 30) {
+                    break a;
+                }
+            }
+            System.out.println(i);
+        }
+        System.out.println(i+10);
+    }
+```
+
+在查看String类源码的时候,发现一个很有趣的东西
+
+java里面可以定义一个标签,这个标签可以用于跳出循环条件
+
+当进入scan里面,进入的break语句的时候;会跳出整个scan标签
+
+
+
+
+
+trim方法
+
+这个方法只会去除前后两端的空格;但是中间的空格是不会去除的
+
+
+
+
+
+toCharArray方法
+
+```java
+ // Cannot use Arrays.copyOf because of class initialization order issues
+        char result[] = new char[value.length];
+        System.arraycopy(value, 0, result, 0, value.length);
+        return result;
+```
+
+
+
+有几个疑问点
+
+> 1.为什么不直接返回value数组?
+
+网友回答:
+
+因为String的设计是不可变的。直接返回底层数组的，就会破坏不可变了;
+
+Java 中没有引用传递
+数组是引用类型，也是值传递，只是 **值** 就是 `value` 的地址，因此修改会影响到 `value`。
+
+> 2.为什么不能使用Arrays.copyOf方法进行拷贝?
+
+**艹,这个东西看起来有点吊啊**
+
+原因在startOverFlow上面找了一下;
+
+```java
+public char[] toCharArray() {
+    // Cannot use Arrays.copyOf because of class initialization order issues
+    /*char result[] = new char[value.length];
+    System.arraycopy(value, 0, result, 0, value.length);
+    return result;*/
+    return Arrays.copyOf(value, value.length);
+}
+```
+
+
+
+歪果网友通过修改jre源码;重写了String.toLCharArray方法结果得到了一个初始化错误;
+
+这个是因为System.initProperties方法调用了
+
+后来这个这个歪果网友又再次进行试验;
+
+添加了两个成员变量;
+
+​	count		-->用于计算调用toChatArray这个方法的次数
+
+​	Throwable	-->用于跟踪打出堆栈信息
+
+由于javac编译不通过;所以这个歪果网友使用了反射进行测试
+
+```java
+Class<String> clazz = String.class;
+Field count = clazz.getDeclaredField("count");
+System.out.println(count.getInt(null));
+Field logs = clazz.getDeclaredField("logs");
+Throwable[] arr = (Throwable[]) logs.get(null);
+for (Throwable e : arr) {
+    if (e != null)
+        e.printStackTrace(System.out);
+}
+```
+
+结果打印出了许多堆栈错误;
+
+实验结果进行到这里;已经可以知道;这个歪果网友 的结论是正确的;
+
+java在启动的时候;确实会调用了String.toCharArray方法;而且,在这个时候Array数组没有进行初始化
+
+
+
+以下是那个歪果网友的结论
+
+1. `System.initProperties` needs to handle some Strings while it initializes system properties.
+2. And while doing initialize, it might invoke `String.toCharArray` to get char arrays from those strings.
+3. Strings invoke `Arrays.copyOf`, but at this point & this time, `Arrays` has not been loaded / initialized.
+4. Differing from running Java code, the native code would not ask for a `class initializing request` (I'm not sure about this, please let me know if I'm wrong!!), and which will lead to a `NullPointerException` and make VM exit.
+
+原文参考地址
+
+https://stackoverflow.com/questions/49715328/why-doesnt-string-tochararray-use-arrays-copyof
+
+
+
+
+
+intern方法
+
+这是一个原生方法
+
+```text
+Returns a canonical representation for the string object. A pool of strings, initially empty, is maintained privately by the class String. When the intern method is invoked, if the pool already contains a string equal to this String object as determined by the equals(Object) method, then the string from the pool is returned. Otherwise, this String object is added to the pool and a reference to this String object is returned. It follows that for any two strings s and t, s.intern() == t.intern() is true if and only if s.equals(t) is true. All literal strings and string-valued constant expressions are interned. String literals are defined in section 3.10.5 of the The Java? Language Specification.
+```
+
+这个方法是用来返回字符串常量池的字符串;如果,常量池中已经存在该字符串;那么直接返回其引用;如果常量池中不含此字符串;那么会将其先放入常量池中,再返回其引用;
+
+参看文章地址
+
+https://www.cnblogs.com/Kidezyq/p/8040338.html
+
+
+
+System.nanoTime()这个方法返回的是纳秒值
+
+```text
+1 System有一个静态的函数nanoTime函数，该函数是返回纳秒的。1毫秒=1纳秒*1000*1000
+如：long time1=System.nanoTime();
+
+
+2 System的nanoTime函数式返回纳秒，但是该函数只能用于计算时间差，不能用于计算距离现在的时间。因为是纳秒太小了。
+如：long time1=System.nanoTime();
+for(int i=0;i<200;i++){
+System.out.print(".");
+}
+long time2=System.nanoTime();
+System.out.println(time2-time1);
+
+
+3 记住，System有一个返回纳秒的函数：nanoTime函数，该函数只用于计算时间差。
+--------------------- 
+作者：xclsky1120 
+来源：CSDN 
+原文：https://blog.csdn.net/yumolan4325/article/details/79201766 
+版权声明：本文为博主原创文章，转载请附上博文链接！
+```
+
+```text
+纳秒 
+　　ns（nanosecond）：纳秒， 时间单位。一秒的10亿分之一，即等于10的负9次方秒。常用作 内存读写速度的单位。 
+　　1纳秒=0.000001 毫秒 
+　　1纳秒=0.00000 0001秒 
+
+java的System.currentTimeMillis()和System.nanoTime()区别: 
+
+java中System.nanoTime()返回的是纳秒，nanoTime而返回的可能是任意时间，甚至可能是负数…… 
+java中System.currentTimeMillis()返回的毫秒，这个毫秒其实就是自1970年1月1日0时起的毫秒数. 
+
+两个方法都不能保证完全精确,精确程度依赖具体的环境.
+```
+
+
+
+System.identityHashCode方法
+
+这个方法返回对象原来的HashCode
+
+```text
+因为System.identityHashCode(obj)这个方法是根据内存地址获取的hash值，每次运行程序时，内存会为对象重新分配内存地址，因此得到的hash值也不一样。
+```
+
+
+
+参考文章:
+
+https://blog.csdn.net/moakun/article/details/80165148
+
+
+
+又看到一个很有意思的东西
+
+在查看String源码的时候发现这样一个东西^=
+
+这个是异或运算
+
+Java中的位运算符中有一个叫做异或的运算符，符号为（^）,其主要是对两个操作数进行位的异或运算，相同取0，相反取1。即两操作数相同时，互相抵消。
+
+简单来说就转成二进制,然后对其相位上的数字,进行运算;如果相同取0，相反取1
+
+
+
+| 符号   | 解释   | 运算规则                                     |
+| ---- | ---- | ---------------------------------------- |
+| &    | 与    | 两个数都转为二进制，然后从高位开始比较，如果两个数都为1则为1，否则为0。    |
+| ~    | 非    | 如果位为0，结果是1，如果位为1，结果是0.                   |
+| \|   | 或    | 两个数都转为二进制，然后从高位开始比较，两个数只要有一个为1则为1，否则就为0。 |
+| ^    | 异或   | 两个数转为二进制，然后从高位开始比较，如果相同则为0，不相同则为1。       |
+
+
+
+二进制转十进制
+
+直接调用Integer.parseInt(,var1,var2)方法就可有直接将二进制转成十进制
+
+
+
+```java
+private void demo04() {
+    int num = 1000;
+    num ^= 5;
+    System.out.println(num);
+    num = 1000;
+    num &= 5;
+    System.out.println(num);
+    num = 1000;
+    num |= 5;
+    System.out.println(num);
+}
+```
+
+
+
+
+
+参考地址-->详细原理
+
+https://www.cnblogs.com/yesiamhere/p/6675067.html
+
+参考地址-->原理:
+
+https://blog.csdn.net/xianjianwz/article/details/80991486
+
+参考地址-->例子
+
+https://www.cnblogs.com/bigbigrain/p/5046267.html
+
+
+
+
+
+
+
+String类方法解析;网友解答
+
+https://www.cnblogs.com/gollong/p/9366046.html

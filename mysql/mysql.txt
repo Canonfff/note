@@ -1,0 +1,32 @@
+ROLLUP 关键字
+
+用于数据汇总
+https://www.cnblogs.com/phpper/p/9384614.html
+
+
+unsigned与 zerofill
+
+int分为unsigned（无正负号）和signed（有正负号）
+一般int默认为signed
+unsigned和unsigned int意思相同
+
+https://www.cnblogs.com/Latiny/p/8058209.html
+
+如果指定列为zerofill,那么mysql将自动的增加unsigned属性
+
+
+建立日期临时表
+SELECT @s := -1;
+SELECT @s :=@s + 1 as `index`, DATE(DATE_SUB(CURRENT_DATE, INTERVAL @s DAY)) AS `date`
+FROM mysql.help_topic,(SELECT @s := -1) temp
+WHERE @s < 6
+ORDER BY `date`;
+
+
+这个的作用是建立一张日期临时表,统计7天内数据;因为有的日期数据为空,所以导致了再进行日期分组的时候;查询没有这一天的数据
+
+博客说明
+https://blog.csdn.net/qq_34902684/article/details/82989844
+
+
+COALESCE函数的作用是返回第一个非空结果

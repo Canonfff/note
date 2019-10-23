@@ -1,0 +1,70 @@
+2019-03-14 接到一个需求托管结算;
+
+其中有一个查询是需要跨服务的;但是财务的model没有依赖平台的model;
+
+所以我在财务这边新建了两个VO去接收查询出来的参数;
+
+但是,因为是两个list;所以我之前的做法
+
+```java
+List<DeputeContractDivide> divides = simpl.getDeputeContractDivideList();
+        List<ProprietorInfo> infoList = simpl.getProprietorInfoList();
+        List<ProprietorVo> proprietorVos = Lists.newArrayList();
+        List<ContractDividVo> contractDividVos = Lists.newArrayList();
+        ProprietorVo proprietorVo  = null;
+        for (ProprietorInfo info : infoList) {
+            proprietorVo = new ProprietorVo();
+            BeanUtils.copyProperties(info, proprietorVo);
+            proprietorVos.add(proprietorVo);
+        }
+        ContractDividVo dividVo  = null;
+        for (DeputeContractDivide info : divides) {
+            dividVo = new ContractDividVo();
+            BeanUtils.copyProperties(info, dividVo);
+            contractDividVos.add(dividVo);
+        }
+```
+
+
+
+
+
+经过思考的做法,就是少了几行代码,不过挺爽的
+
+```java
+/**
+     * 转化list
+     * @param baseVo
+     * @param simpl
+     */
+    private void converList(TrusteeBaseVo baseVo, SimplDeputeDateVo simpl) {
+        List<DeputeContractDivide> divides = simpl.getDeputeContractDivideList();
+        List<ProprietorInfo> infoList = simpl.getProprietorInfoList();
+        List<ContractDividVo> contractDivids = (List<ContractDividVo>) get(divides, ContractDividVo.class);
+        List<ProprietorVo> proprietorVos = (List<ProprietorVo>) get(infoList, ProprietorVo.class);
+        baseVo.setContractDividVos(contractDivids);
+
+    }
+
+    /**
+     * 转化
+     * @param list
+     * @param clazz
+     * @return
+     */
+    private static List<?> get(List<? extends Object> list, Class<? extends Object> clazz) {
+        List vos = Lists.newArrayList(clazz);
+        try {
+            for (Object t : list) {
+                Object o = clazz.newInstance();
+                BeanUtils.copyProperties(t, o);
+                vos.add(o);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            logger.error("结算单类型转化异常...");
+        }
+        return vos;
+    }
+```
+

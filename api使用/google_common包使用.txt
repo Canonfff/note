@@ -1,0 +1,4 @@
+google的common包有许多操作集合(collection)的API;
+Lists.newArrayList();构建一个List对象
+Maps.newHashMap();构建一个Map对象
+Lists.partition();对集合对象进行分片处理,如:1000,分成500,500

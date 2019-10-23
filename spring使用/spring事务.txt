@@ -1,0 +1,15 @@
+今天看到马哲在云掌柜这里使用了一个对于我来说比较新鲜的东西
+
+
+TransactionSynchronizationManager
+	这个类的作用是在提交事务之后进行操作;
+		eg:
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+                @Override
+                public void afterCommit() {
+                    dingtalkMessageService.addTodoMsg(todoMessageList);
+                }
+            });
+		
+	参考博客:
+		https://blog.csdn.net/maqingbin8888/article/details/81772025

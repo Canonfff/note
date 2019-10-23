@@ -1,0 +1,130 @@
+### LinkedList源码阅读
+
+介绍巴拉巴拉讲了一大堆;大概就是说这是一个双向列表,可以存null对象
+
+
+
+疑问:
+
+为什么linkedList的size是transient?
+
+而ArrayList的size是private?
+
+
+
+构造函数:
+
+linkedList其实就是弄出了两个节点;
+
+Node<E> first
+
+Node<E> last
+
+
+
+Node这是一个内部类;
+
+E item;
+
+Node<E> next;
+
+Node<E> prev;
+
+这里的作用存储数据
+
+
+
+LinkedList(Collection < E > c)构造函数
+
+这个构造函数允许传入一个集合对象;
+
+里面首先调用了一个无参构造;
+
+再调用了addAll方法
+
+
+
+addAll方法;
+
+```java
+ /**
+     * Inserts all of the elements in the specified collection into this
+     * list, starting at the specified position.  Shifts the element
+     * currently at that position (if any) and any subsequent elements to
+     * the right (increases their indices).  The new elements will appear
+     * in the list in the order that they are returned by the
+     * specified collection's iterator.
+     *
+     * @param index index at which to insert the first element
+     *              from the specified collection
+     * @param c collection containing elements to be added to this list
+     * @return {@code true} if this list changed as a result of the call
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     * @throws NullPointerException if the specified collection is null
+     */
+    public boolean addAll(int index, Collection<? extends E> c) {
+        checkPositionIndex(index);
+
+        Object[] a = c.toArray();
+        int numNew = a.length;
+        if (numNew == 0)
+            return false;
+
+        Node<E> pred, succ;
+        if (index == size) {
+            succ = null;
+            pred = last;
+        } else {
+            succ = node(index);
+            pred = succ.prev;
+        }
+
+        for (Object o : a) {
+            @SuppressWarnings("unchecked") E e = (E) o;
+            Node<E> newNode = new Node<>(pred, e, null);
+            if (pred == null)
+                first = newNode;
+            else
+                pred.next = newNode;
+            pred = newNode;
+        }
+
+        if (succ == null) {
+            last = pred;
+        } else {
+            pred.next = succ;
+            succ.prev = pred;
+        }
+
+        size += numNew;
+        modCount++;
+        return true;
+    }
+```
+
+
+
+这里面首先,将这个集合对象转成了一个数组;
+
+其实就是里面有node对象,如果first为null;
+
+那么就将第一个设置为first为新new的node;
+
+
+
+**LinkedList不是线程安全的**
+
+如果要实现线程安全可以使用`List list=Collections.synchronizedList(new LinkedList(...));`
+
+
+
+
+
+
+
+
+
+网友参考文章:
+
+https://github.com/Snailclimb/JavaGuide/blob/master/Java%E7%9B%B8%E5%85%B3/LinkedList.md
+

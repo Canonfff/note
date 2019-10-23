@@ -1,0 +1,8 @@
+BeanPostProcessor
+这个类的作用的spring加载bean的后置处理器;
+postProcessBeforeInitialization 初始化之前调用
+postProcessAfterInitialization 初始化之后调用
+
+
+
+
