@@ -1,0 +1,54 @@
+1.昨天遇到一个问题,程序插入14条数据死活都插入不进去;
+
+2.一直显示
+	Lock wait timeout exceeded; try restarting transaction
+
+3.这个问题卡住了很久时间;导致数据一直不能同步过去;
+
+4.可是我在本地测试的时候,批量插入是没有问题的;我插入了1条数据,2条数据都顺利的成功插入;证明这个不是数据被锁表了;
+
+5.可是后来在晚上12:36分的时候,我开远程调试;插入数据;一次就成功了;很奇怪,应该是有什么事务卡住了;导致这个一直过不去;但是我查看了是否有进行事务;却没有找到;
+
+
+
+
+
+下列是mysql查询锁表语句;
+
+参考网站
+https://www.cnblogs.com/wayne173/p/8079503.html
+
+
+mysql查看被锁住的表
+
+查询是否锁表
+show OPEN TABLES where In_use > 0;
+
+查看所有进程
+MySQL:
+
+show processlist;
+mariabd:
+
+show full processlist;
+查询到相对应的进程===然后 kill id
+
+杀掉指定mysql连接的进程号
+kill $pid
+
+查看正在锁的事务
+SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCKS; 
+
+查看等待锁的事务
+SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCK_WAITS; 
+
+查看innodb引擎的运行时信息
+show engine innodb status\G;
+
+查看造成死锁的sql语句，分析索引情况，然后优化sql语句；
+
+查看服务器状态
+show status like '%lock%';
+
+查看超时时间：
+show variables like '%timeout%';
