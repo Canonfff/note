@@ -1,2 +1,57 @@
 2020-08-31 项目使用到了netty框架,做一下netty框架的知识点汇总
+1.使用的netty server
+
+1.如何构建一个一个netty server
+        // 启动网络服务器
+   		EventLoopGroup boss = new NioEventLoopGroup();
+   		EventLoopGroup worker = new NioEventLoopGroup();
+
+   		try {
+   			ServerBootstrap boot = new ServerBootstrap();
+   			boot.group(boss, worker).channel(NioServerSocketChannel.class)
+   					.childHandler(new GatewayServerInitializer())
+   					.option(ChannelOption.SO_BACKLOG, 128)
+   					.childOption(ChannelOption.SO_KEEPALIVE, true);
+   			ChannelFuture f = boot.bind(port).sync();
+   			f.channel().closeFuture().sync();
+   		} catch (InterruptedException e) {
+   			logger.error("Can't start gateway process", e);
+   			return;
+   		}finally{
+   			boss.shutdownGracefully();
+   			worker.shutdownGracefully();
+   		}
+
+1.使用的异步阻塞IO
+
+项目介绍
+    闸机前置服务器,是使用netty构建,异步阻塞读取数据,再使用http将请求转发到线上的中转服务器;实现了物理终端(闸机)与线上服务的数据交互
+
+    1.主备节点切换
+    2.发送请求代码重构
+
+
+主备节点切换
+    1.使用工厂模式构建一个executor对象,对象分成异步执行或者同步执行两种
+    2.使用工厂方法获取执行器Handler,执行execute方法
+    3.使用模板方法,方便子类扩展接口,分成了前置处理,执行,后置处三种
+    4.Handler分成了异步执行者和同步执行者
+    5.异步执行者,从当前上下文中获取当前节点信息返回
+    6.初始化返回执行者,调用工厂初始化责任链模式
+        为什么要使用责任链模式,这种方式,可以更好的解耦,组合代码;后面的扩展只需要增加执行的链路就可以了
+    7.切换上下文
+        使用cas切换上下文对象;具体的过程是这样的,AtomicBoolean调用CompareAndSet将false设置成true,这个过程是原子性的,内部调用了unsafe
+        compareAndSwapInt方法,如果加锁不成功,那么就就自旋,3次不成功,默认此次切换失败;这里不会有问题,因为这里的切换方向是一致的;所以切换失败
+        没有做失败处理;这里锁的节点是,当前请求的节点;
+
+AtomicBoolean底层使用的是unsafe类
+    Unsafe类特点
+        1.不受jvm管理,无法被GC,需要手动GC,有可能会导致内存泄漏
+        2.Unsafe的不少方法中必须提供原始地址(内存地址)和被替换对象的地址(内存地址),偏移量要自己计算,一旦出现问题就是jvm奔溃的级别的异常
+        3.直接操作内存,意味着更快,在高并发条件下能够更好的提高效率
+
+
+
+
+
 
