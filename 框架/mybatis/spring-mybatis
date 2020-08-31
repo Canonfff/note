@@ -1,0 +1,44 @@
+spring与mybatis主要的结合点在于一个jar包mybatis-spring
+这个包的作用是整合mybatis框架与spring框架
+
+这里面有几个类比较重要
+SqlSessionTemplate
+SqlSessionUtils
+
+先提出疑问:
+1.spring在一次请求中,是在什么时候打开SqlSession的?
+2.同一个的方法中,请求两次同样的dao,是否会创建两个sqlSession?
+3.spring的加载是单例,SqlSession如何做到线程隔离?
+
+
+mybatis-spring结合
+https://www.cnblogs.com/yougewe/p/10072740.html
+
+官方文档
+http://mybatis.org/spring/zh/index.html
+
+
+1.session存在ResourceHolder里面,使用的threadLocal,当去获取的时候,判断是否存在,如果不存在就初始化一个
+2.不会,因为每次去获取session都会先判断在threadLocal里面是否已经存在SqlSession,如果不存在才会创建
+3.使用了ThreadLocal
+
+
+
+MapperFactoryBean负责SqlSession的创建和关闭
+在基础的SqlSessionFactoryBuilder来创建SqlSessionFactory,但是mybatis-spring中使用SqlSessionFactoryBean来创建
+    SqlSessionFactoryBean实现了FactoryBean接口,意味着spring最终创建的bean并不是SqlSessionFactoryBean本身,而是工厂类SqlSessionFactoryBean
+    的getObject方法返回的结果,在这种情况下,spring在启动的时候会帮你创建SqlSessionFactory
+
+
+SqlSessionFactory创建过程使用到了享元设计模式
+    1.减少了创建对象的次数
+    2.提高了系统的复杂程度,需要分离出外部状态和内部状态,而且外部状态具有固化的属性,不会随着内部状态的变化而变化
+
+
+
+事务
+    mybatis-spring允许mybatis允许参与到spring的事务管理中
+
+
+SqlSessionTemplate是mybatis-spring的核心
+    作为SqlSession的一个实现,SqlSessionTemplate是线程安全的
