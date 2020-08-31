@@ -1,0 +1,84 @@
+mybatis 官方文档阅读笔记
+https://mybatis.org/mybatis-3/zh/getting-started.html
+
+
+1.mybatis的应用都是基于SqlSessionFactory
+ 简单来说,所有的核心基础是这个类
+
+ SqlSession
+每个线程都应该有它自己的 SqlSession 实例。SqlSession 的实例不是线程安全的，因此是不能被共享的，所以它的最佳的作用域是请求或方法作用域。 绝对不能将 SqlSession 实例的引用放在一个类的静态域，甚至一个类的实例变量也不行。 也绝不能将 SqlSession 实例的引用放在任何类型的托管作用域中，比如 Servlet 框架中的 HttpSession。 如果你现在正在使用一种 Web 框架，考虑将 SqlSession 放在一个和 HTTP 请求相似的作用域中。 换句话说，每次收到 HTTP 请求，就可以打开一个 SqlSession，返回一个响应后，就关闭它。 这个关闭操作很重要，为了确保每次都能执行关闭操作，你应该把这个关闭操作放到 finally 块中
+
+2.SqlSessionFactory可以用SqlSessionFactoryBuilder获取,这里通过构建全局的Configuration配置对象构建出SqlSessionFactory实例
+
+
+使用xml的方式构建 mybatis
+
+使用java的方式构建mybatis
+
+
+其实上面的内容都是可以归类成下面的步骤
+
+1.构建DataSource 数据源
+2.构建transactionManager 事务管理者
+3.Enviroment mybatis运行时环境实例
+3.Configuration mybatis全局配置实例
+4.SqlSessionFactoryBuilder SqlSessionFactory建造者实例
+5.SqlSessionFactory mybatis全局Session工厂实例
+
+
+
+xml配置优先级, 从高到低
+1.方法参数传递的属性值最高
+2.resource/url属性中指定的资源路径次之
+3.properties元素指定的属性优先级最低
+
+
+
+ObjectFactory 对象工厂
+每次mybatis创建结果对象的新实例的时候,都会使用一个对象工厂(ObjectFactory)实例来完成实例的工作,默认的对象工厂需要做的仅仅是实例化目标类,要么通过默认的无参构造方法,要么通过存在的参数映射来调用待有参数的构造方法,如果想覆盖默认工厂的行为,可以通过创建自己的工厂来实现
+
+eg:
+	通过继承DefaultObjectFactory来重写父类的方法,再在xml里面进行覆盖
+
+<!-- mybatis-config.xml -->
+<objectFactory type="org.mybatis.example.ExampleObjectFactory">
+  <property name="someProperty" value="100"/>
+</objectFactory>
+
+
+
+plugins 插件
+mybatis提供四种类型的插件接口
+1.Executor (update, query, flushStatements, commit, rollback, getTransaction, close, isClosed)
+2.ParameterHandler (getParameterObject, setParameters)
+3.ResultSetHandler (handleResultSets, handleOutputParameters)
+4.StatementHandler (prepare, parameterize, batch, update, query)
+
+
+使用插件
+实现 Interceptor 接口
+1.@Intercepts
+2.@Signature
+
+
+
+
+mybatis一级缓存与二级缓存
+1.一级缓存
+	mybatis一级缓存是session级别的缓存,session的作用域是请求或者方法,一级缓存是默认开启的
+
+2.二级缓存
+	mybatis二级缓存是namespace级别的缓存,namespace可以作用于多个sqlSession
+
+	开启二级缓存
+<configuration>
+    <settings>
+        <!--这个配置使全局的映射器(二级缓存)启用或禁用缓存-->
+        <setting name="cacheEnabled" value="true" />
+        .....
+    </settings>
+    ....
+</configuration>
+
+
+

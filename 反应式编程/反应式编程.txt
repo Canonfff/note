@@ -1,0 +1,11 @@
+1.反应式编程(响应式编程) reactive programming
+
+定义:
+	反应式编程属于声明式编程,数据流
+
+	反应式编程(reactive programming)是一种基于数据流(data stream)和变化传递(propagation of change)和声明式(declearative)的编程范式
+
+	换句话说:
+		使用异步数据流进行编程,这意味着可以在编程语言中很方便的表达静态或者动态的数据流,而相关的计算模型会自动将变化的值通过数据流进行传播
+
+	

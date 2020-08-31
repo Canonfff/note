@@ -1,0 +1,21 @@
+2020-05-19 14:41
+今天在泰久信息阅读项目源码的时候看见一些自己没有接触过的代码
+
+java的内省机制
+
+
+Introspector
+
+PropertyDescriptor
+
+
+先解释一下什么是java的内省机制
+
+	Introspector(内省)是java语言针对javaBean类属性,事件的一种缺省处理方式;javaBean是一种特殊的类,主要用于数据传输;这种类主要用于访问私有字段;并且方法名符合某种特定规则;如果在两个模块之间传递数据,可以将信息封装到javaBean里面;这种对象称之为"值对象"(value Object),或者VO;
+
+
+	Introspector可以获取对象的信息BeanInfo
+
+	BeanInfo可以获取类的描述信息
+	
+

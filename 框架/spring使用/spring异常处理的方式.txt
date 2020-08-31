@@ -1,0 +1,11 @@
+1.Controller层的异常处理方式
+	1.定义一个baseController;在这里编写方法在方法上加上注解@ExceptionHandler()标识解决哪种类型的异常
+	如果出现了异常就会进入到这个方法里面
+
+2.HandlerExceptionResolver接口处理全局异常
+	1.HandlerExceptionResolver.resolveException()方法里面编写处理异常的逻辑
+
+3.@ControllerAdvice + @ExceptionHandler 注解解决全局异常问题
+	1.定义一个处理异常的bean;加上@ControllerAdvice注解;标识这是一个处理的异常的bean
+	2.定义方法加上@ExceptionHandler标识这个方法处理哪种类型的异常
+

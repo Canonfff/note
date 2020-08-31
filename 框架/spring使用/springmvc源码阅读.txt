@@ -1,0 +1,1153 @@
+springmvc之前读过一部分源码;现在需要更加细致的阅读一下
+
+
+看的版本是3.2
+先说架构
+	首先springmvc采用的是一个外观者模式;
+	所有的入口都是通过一个DispatcherServlet.doDispatch()方法是外观者的入口
+
+	getHandler(request) ----> 获取处理器链对象 --> HandlerExecutionChain
+
+	handlerMappings --> 映射处理器
+
+	此时将Handler对象放置在HandlerExecutionChain对象的handler属性里面
+		handler对象里面的bean放置了具体需要调用的Controller对象
+
+	getHandlerAdapter(handler) --> 获取处理器适配器  --> HandlerAdapter
+
+	RequestMappingHandlerAdapter --> 获取Controller的RequestMapping处理器映射器
+		--> supportsInternal() 这个方法直接返回了true...mmp这源码有毒???
+
+	
+
+	// 拦截器执行
+	mappedHandler.applyPreHandle(processedRequest, response)
+
+	// Actually invoke the handler.
+	mv = ha.handle(processedRequest, response, mappedHandler.getHandler()); --> 这里是调用的核心逻辑
+		--> handleInternal()
+			--> invokeHandleMethod()
+				--> invokeAndHandle(webRequest, mavContainer);
+
+
+
+
+
+2020-05-28 08:49
+这两天看了一本看透springmvc源码的书,看了之后才发现,原来之前自己看的源码实在是太简单了;
+没有认真去研究与阅读源码;这次我想换个角度,跟从作者的思路去解析源码,弄清楚为什么spring要这么去实现mvc源码;
+
+
+从头开始看springmvc的源码
+首先是创建过程,创建过程中最重要的涉及到的三个bean
+	1.HttpServletBean
+	2.FrameworkServlet
+	3.DispatcherServlet
+
+目前来说,我使用的版本是mvc3.2;所以可能和作者的版本对应不上;不过问题不大,顶层的设计思路是没有改变的
+
+
+	1.HttpServletBean
+		初始化过程,重写了Servlet的init方法
+		在init方法里面
+			1.将servlet配置的参数设置到PropertyValues;
+			2.使用spring获取BeanWrapper对象
+			3.使用模板方法,提供入口给子类调用
+			4.使用Spring的BeanWrapper设置属性
+			5.使用模板方法提供给子类实现加载	initServletBean  --  这里的实现主要是FrameworkServlet去实现的
+
+
+	2.FrameworkServlet
+		因为父类是HttpServletBean,所以一些初始化的步骤已经在父类中完成了;initServletBean会继续完成父类没有加载完成的东西
+		1.初始化了webApplicationContext 上下文对象  (这里做了三件事)
+			1.获取跟容器rootContext
+			2.设置webApplicationContext并看情况是否onRefresh方法
+			3.设置到ServletContext中
+
+				知识点:
+					1.spring的跟容器对象一般设置成ServletContext的属性,所以只要去ServletContext里面去获取就可以了
+						key的值是org.springframework.web.context.WebApplicationContext.ROOT
+						这里是放在webApplicationContext的成员变量里面
+					
+					2.设置webApplicationContext的三种方式
+						1.使用构造函数设置,传递webApplicationContext对象,这种要用在servlet3.0之后;因为在servlet3.0之后可以在程序使用ServletContext.addServlet()方法注册servlet;这  时候就可以新建FrameworkServlet将准备好的webApplicaitonContext对象设置进来
+
+						2.第二种就是webApplicationContext对象已经存在ServletContext对象中了这个时候只要在配置servlet将webApplicationContext的name设置Servlet的ContextAttribute属性中就可以了
+							eg:
+								<!-- web.xml -->
+								<servlet>
+									<servlet-name>my-servlet-name</servlet-name>
+									<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+									<init-param>
+										<param-name>ContextAttribute</param-name>
+										<param-value>webApplicationContextValue</param-value>
+									</init-param>
+									<load-on-startup>1</load-on-startup>
+								</servlet>
+
+						3.第三种就是在前面两种无效的情况下,自己创建的一个webApplicationContext正常情况下就是使用这种方式去创建,主要使用的方法是:
+							wac = createWebApplicationContext(rootContext);
+
+							createWebApplicationConext --> 创建spring-web-容器上下文对象
+								1.获取XmlWebApplicationContext.class   在FrameworkServlet里面写死;
+								2.使用beanUtils反射获取实例对象
+								3.设置上下文环境,设置根容器,设置上下文配置
+								4.configureAndRefreshWebApplicationContext(wac) 配置并且刷新webApplicationContext
+									1.设置ServletContext
+									2.设置ServletConfig
+									3.设置nameSpace
+									4.添加监听器    这里的监听器主要是用来监听上下文容器刷新的监听,监听器是FrameworkServlet的一个内部类ContextRefreshListener
+									5.确保上下文容器刷新的时候,已经准备初始化了
+									6.postProcessWebApplicationContext 模板方法,用于子类扩展刷新上下文的时候处理
+									7.refresh刷新
+
+									知识点:
+										这里回到initWebApplicationContext方法中,因为容器在监听器中实现了onRefresh方法,因此在这里不会再去调用onRefresh方法了,这里的onRefresh方法是由子类DispatcherServlet实现
+
+
+		2.initFrameworkServlet 模板方法,提供给子类去实现
+
+
+	3.DispatcherServlet
+		之前的父类FrameworkServlet预留了一个模板方法onRefresh给DispatcherServlet去初始化组件信息,这里直接调用了initStragies()方法进行初始化组件信息
+		书中提到,为什么不将initStragies方法里面的初始化组件的方法直接放到onRefresh方法里面?
+			1.initStragies方法是专门初始化组件的方法,这样逻辑更加清晰
+			2.如果后面需要在onRefresh方法里面添加其它逻辑,但是不需要初始化组件;这样处理起来会比较麻烦
+			3.如果有其它地方需要调用initStragies方法,但是此时onRefresh方法添加了其它功能,这样拆分起来会很麻烦
+			4.如果子类继承,需要重新组件的方法,那么直接重写initStragies方法就可以了
+
+		initStragies方法,主要是初始化了9个组件
+			1.文件上传
+			2.本地化Locale
+			3.主题theme
+			4.处理器映射器handlerMapping
+			5.处理器适配器handlerAdapter
+			6.异常处理
+			7.发生异常时的缺省视图
+			8.视图viewResolvers
+			9.initFlashMapManager --> flashMap主要用来管理redirect的参数
+
+
+			初始化组件的方法非常简单,就是寻找策略,分为两步
+				1.从context(这里的context是webApplicationContext)在这里里面根据名称或者class类型去寻找
+				2.如果没有找到,就给一个默认值
+
+				寻找默认策略方式
+					1.getDefaultStrategy 
+					2.getDefaultStrategies  返回的是一个集合类型,因为handlerMapping是一个集合对象
+						这里实际使用传过来的class获取名称,得到一个key值,根据这个key值去找到对应的value;通过反射对value进行初始化,最终生成策略类返回
+
+						value是用JDK的properties对象通过类加载器,获取classpath路径下的配置文件,文件名写死:DispatcherServlet.properties
+						这个properties里面初始化了8个组件,多个实现以逗号分隔
+						没有定义Multi-partResolver,这里没有定义是因为不是所有项目都需要进行文件上传
+
+						知识点:
+							这里的配置不是spring推荐的配置,也不是最优配置;而是spring在没有找到定义的配置时候,默认一个配置;
+							当使用了<mvc:annotation-dirven/>后,并不会全部使用默认配置,因为他配置了HandlerMappings,HandlerAdapter,HandlerExceptionResolver
+
+							可以查看org.springframework.web.servlet.config.AnnotationDrivenBeanDefinitionParser;
+
+
+							tips:
+								在spring的xml文件中,通过命名空间配置的标签是怎么解析的?
+									1.spring将解析标签的类都放置到META-INF目录下的spring.handlers文件中;
+										eg:
+											mvc命名空间的解析放置在了spring-mvc-4.1.5.RELASVE.jar包下的META-INF/spring.handlers文件中,其内容为:
+												http\://www.springframework.org/schema/mvc=org.springframework.web.servlet.config.MvcNamespaceHandler
+
+											这也就告诉我们,mvc这个命名空间的配置要使用MvcNamespaceHandler进行(在其内部将<mvc:annotation-driven/>交给AnnotationDrivenBeanDefinitionParser处理)
+
+
+								解析配置的接口是NamespaceHandler;
+									NamespaceHandler有三个方法:
+										1.init 初始化自己
+										2.parse 解析标签  将标签解析成BeanDefinition
+										3.decorate 装饰   --> 对BeanDefinition进行修改
+
+
+									NamespaceHandler的实现类主要三个
+										1.SimpleConstructorNamespaceHandler					主要解析"c:"命名空间
+										2.SimplePropertyConstructorNamespaceHandler			主要解析"p:"命名空间
+										3.NamespaceHandlerSupport							没有具体解析工作,而是定义了三个处理器
+											1.parsers				处理解析工作
+											2.decorators			处理标签类型
+											3.attributesDecorators  处理属性类型装饰
+
+
+
+	2.mvc使用
+		2020-05-28 14:54
+		吐槽一下,头皮发麻;这个东西光是看一遍就让人脑袋疼;而且,我只是看了很少的一部分;可见spring项目在进行项目架构,以及编写代码的时候,真的很吊;在阅读源码的时候,也真的可以感受到spring团队对代码质量的把控非常高,对于代码的健壮性,扩展性做非常出色;阅读这个源码真的是一件非常享受的事情
+
+		1.FrameworkServlet
+			1.处理请求
+				FrameworkServlet重写了父类的Service方法并将所有的请求(除PATCH之外)都放置到了processRequest方法里面
+
+					知识点:
+						为什么要这么做?为什么不直接重写servlet的service方法?
+						spring这样做的原因,在于;如果子类想对比如post方法做一些扩展,按照正常来说,只要做完自己的扩展,然后调用一下doPost方法即可;如果按照上述的方式;那么在调用doPost的时候就会出现问题;这也是spring代码健壮性的一种体现;
+
+				processRequest方法:
+					1. 这里的核心方法是doService();这个是模板方法,最终就是交由DispatcherServlet进行处理
+					2. LocalContextHolder, RequestContextHolder
+						这里干了什么?
+						1. 从原来的ThreadLocal里面取出原来的LocaleContext和RequestContext
+						2. 将当前请求Locale和requestAttribute设置到LocaleContextHolder和RequestContextHolder中
+						3. 在请求处理完成之后,将LocaleContext和RequestContext设置回LocaleContextHolder和RequestContextHolder中
+
+						为什么要这么操作?
+							因为这些都是spring自己封装的方法内部使用的;除此之外,spring并不想影响到自己控制之外的方法的使用;如,Filter;
+							interceptor是在DispatcherServlet里面完成的
+
+					3.通过request拿到异步处理器并且设置了拦截器
+					4.发布了一个请求事件
+
+					
+						LocaleContextHolder,RequestContextHolder
+						这两个是abstract类
+
+						eg:
+							LocaleContextHolder
+								1.封装了两个属性
+									localeContextHolder
+									inheritableLocaleContextHolder    
+								2.这两个属性都是ThreadLocal,其中inheritableLocaleContextHolder可以被子线程获继承;
+
+						发布请求事件:
+							1.当publishEvents设置成true的时候,无论请求成功与否,都会发布事件;
+								可以用来记录日志
+
+							知识点:
+								1.publishEvents怎么设置?
+									可以web.xml配置servlet的时候设置,默认是true;
+								2.如何使用?
+									自定义一个类,如 MyApplicationListener继承ApplicationListener
+									重写onApplicationEvent方法就可以写自己的逻辑
+									当然,这个类需要交给spring管理
+
+
+			2.DispatcherServlet
+				dispatcherServlet是处理请求的核心类;在上述FrameworkServlet使用了一个模板方法doService方法交由DispatcherServlet去实现;
+				在doService方法中最终交给了doDispatch方法,但是在进行doDispatch方法之前还进行了一些内容处理
+
+				doService
+					1.先将请求信息做了快照(如果include请求的时候)
+					2.将webApplicationContext,localeResolver,themeResolver,themeSource设置到request里面
+
+					知识点:
+						redirect如何传递参数?
+							注入: RedirectAttributes attr
+
+								// way1 放到flashMap里面
+								FlashMap flashMap = (FlashMap) ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest().getAttribute(DispatcherServlet.OUTPUT_FLASH_MAP_ATTRIBUTE);
+								// way2 放到flashMap里面
+								attr.addFlashAttribute("key","value");
+								// 拼接到URL路径中
+								attr.addAttribute("key", "value");
+
+
+
+				doDispatch
+					这个是DispatcherServlet处理请求的顶层设计,MD这个东西优雅的一批;核心的代码只有4句
+						1.mappedHandler = getHandler(processedRequest, false);   												拿到handler
+						2.HandlerAdapter ha = getHandlerAdapter(mappedHandler.getHandler()); 									拿到handlerAdapter
+						3.mv = ha.handle(processedRequest, response, mappedHandler.getHandler());								处理handler
+						4.applyDefaultViewName(request, mv);																	渲染视图
+
+
+
+
+
+
+
+	DispatcherServlet 组件介绍			
+
+		1.HandlerMapping 												处理器映射器,简单来说就是找到对应的Handler
+		2.HandlerAdapter 												处理器适配器,就是指挥Handler工作的一个类
+		3.HandlerExceptionResolver 										错误处理组件
+		4.ViewResolver													视图处理组件,主要返回view视图
+		5.RequestToViewNameTranslator									根据request查找View的组件
+		6.LocaleResolver 												解析视图需要两个组件,一个是视图名称,一个是locale;这个组件的作用就是返回locale; 切换视图主要就是使用这个组件
+		7.ThemeResolver 												主题解析组件,切换主题的时候需要用到
+		8.MutipartResolver 												文件上传组件,主要处理的是文件上传
+		9.FlashMapManager 												flashMap主要是在Redirect中传递参数,这个组件就是用来管理flashMap的
+
+
+
+
+
+	1.HandlerMapping 处理器映射器
+		HandlerMapping是一个顶层接口
+		其继承体系主要有两个
+			1.AbstractUrlHandlerMapping
+
+			2.AbstractMethodHandlerMapping
+
+		两个都继承于AbstractHandlerMapping
+
+		AbstractHandlerMapping是HandlerMapping的抽象实现,spring采用了模板设计的方式去实现HandlerMapping的整体结构;就是父类提供一个模板,由子类去实现具体的细节,这种方法在spring里面常常可以看到;
+
+		HandlerMapping的作用:	
+			1.根据request寻找handler
+			2.根据request寻找interceptor
+
+
+		AbstractHandlerMapping创建过程
+			1.AbstractHandlerMapping继承了WebApplicationObjectSupport
+				WebApplicationObjectSupport这个类的作用
+					类上的comment表示,这个类是方便父类在应用中运行;
+
+
+			2.AbstractHandlerMapping的创建就是initApplicationContext这个方法里面完成的,这里面有三个方法
+				1.extendInterceptors    		这是一个模板方法,方便子类扩展添加拦截器
+				2.detectMappedInterceptors      将mvc容器和父容器所有MappedInterceptor.class类型的bean添加到mappedInterceptors
+				3.initInterceptors 				初始化interceptors,具体的作用是interceptors添加到mappedInterceptors或者adaptedInterceptors
+
+			3.AbstractHandlerMapping的interceptors一共有三种类型
+				1.Interceptor 					mvc的拦截器 			有两种设置方式
+					1.注册HandlerMapping时通过属性设置
+					2.使用extendInterceptors的钩子方法进行设置
+					3.interceptors并不会直接使用,而是通过initInterceptors方法按照类型分配到mappedInterceptors或者AdaptedInterceptors
+
+						知识点:  什么是钩子方法?
+							1.简单来说,就是父类预留出一个方法,子类通过重写这个方法,干预父类的逻辑
+							2.钩子方法来源是设计模式中的模板方法
+
+				2.mappedInterceptor
+					此类型Interceptor在getHandler里面通过路径匹配到Interceptor添加到HandlerExecutionChain
+
+				3.adaptedInterceptor
+					这种类型Interceptor不需要进行匹配,在getHandler方法的时候会全部添加到HandlerExecutionChain里面
+					
+
+			4.AbstractHandlerMapping使用
+				1.HandlerMapping使用getHandler方法来获取处理器Handler和拦截器interceptor
+
+				2.AbstractHandlerMapping的getHandler方法
+					1.获取handler  
+						1.getHandlerInternal() 这个是模板方法,留给子类去实现
+						2.如果获取不到handler,那么会获取一个默认的handler,这个handler也可以由子类设置
+
+					2.获取拦截器getHandlerExecutionChain方法
+						1.获取handlerExecutionChain对象
+						2.设置adaptedInterceptor和mappedInterceptor集合
+
+
+		AbstractUrlHandlerMapping初始化过程
+			1.getHandlerInternal方法 获取Handler
+				1.从Map里面获取Handler
+				2.lookupHandler 从lookPath里面找到合适的handler对象
+				3.buildPathExposingHandler 给handler加上两个内部拦截器
+					1.PathPosingHandlerInterceptor 
+					2.UriTemplateVariablesHandlerInterceptor
+						主要作用是将当前url匹配到的Pattern,匹配条件,url模板参数设置到request里面,这样后面就不用重新查找一遍
+
+			2.handlerMap的初始化由registerHandler进行
+				1.将url注册到handler里面
+				2.将多个url注册到同一个handler里面
+				3.注册之前先判断是否已经存在这个url注册过了,如果已经注册过,那么直接抛出异常
+
+
+			SimpleUrlHandlerMapping初始化
+				1.这里的初始化很简单,就是在初始化的时候需要给他设置UrlMapping
+
+
+			AbstractDetectingUrlHandlerMapping初始化
+				1.也是通过重写initServletContext方法来初始化自己的
+				2.detectHandlers通过配置的detectHandlersInAncestorContext参数在spring的容器里面
+					1.这里会针对每个beanName解析出url,如果能解析到,就注册到父类的Map里面
+
+
+				BeanNameUrlHandlerMapping
+					1.检查beanName和alias是不是以"/"开头,如果是,那么就将其作为url
+
+				AbstractControllerUrlHandlerMapping
+					是将实现了Controller接口或者注解了@Controller的bean作为Handler,并且可以通过设置excludedClasses和excludedPackages将不包含的bean和包排除在外
+ 
+
+		AbstractHandlerMethodMapping初始化过程
+			1.这里实现InitializingBean
+			2.AbstractHandlerMethodMapping系列是将Method作为Handler来使用的,@RequestMapping注解所标识的就是这种Handler,它有一个专门的类型HandlerMethod,也就是Method类型的Handler
+
+			初始化过程:
+				这里的Map
+					1.Map<T, HandlerMethod> handlerMethods 保存着匹配条件
+					2.MultiValueMap<String, T> urlMap  保存着url匹配条件
+
+					这种相当于我之前用过的双重映射,简单来说,就是我通过url获取一个object,然后通过object再去匹配第二个handlerMethods获取HandlerMethod
+
+			3.initHandlerMethods 
+				1.获取到所有的bean,
+				2.根据一定规则(isHandler 模板方法,具体实现在RequestMappingHandlerMapping),过滤获取到Handler
+					1.是否有RequestMapping注解,或者是否有Controller注解
+				3.detectHandlerMethods将获取到的handler放到Map里面
+					1.获取Handler类型
+					2.如果是cglib子类型,则返回父类型
+					3.获取当前bean里面所有符合Handler要求的Method;
+					4.将所有的Method注册起来,也就是保存到三个Map里面
+
+				4.registerHandlerMethod 注册到Map里面
+					1.判断是否已经存在HandlerMethod
+					2.HandlerMethod放到Map(handlerMethods)里面
+					3.将匹配规则放到urlMap里面
+
+			4.getHandlerInternal 获取handler
+				1.获取lookupPath --> url 
+				2.根据lookupPath, request获取到handlerMethod lookupHandlerMethod
+					1.根据url获取一个匹配条件
+					2.将获取到的匹配条件添加到matchs(这个是在方法体里面new出来的)
+					3.如果不能匹配到条件,那么将所有的匹配条件到都添加到matchs里面
+					4.将所有的匹配条件排序,取第一个
+				3.根据handlerMethod的createWithResolvedBean获取新的handlerMethod
+					1.判断传入的handler是否是string类型
+					2.如果是string类型,那么从applicationContext里面获取到bean,将bean和handler构建一个handlerMethod
+
+
+	2.HandlerAdapter
+		HandlerMapping通过Request找到了Handler,HandlerAdapter是具体使用Handler来干活的,每个HandlerAdapter都封装了一种使用handler的使用方法
+
+		1.supports 是否支持当前Handler
+		2.handle 调用当前handler
+		3.getLastModified 获取资源
+
+		子类实现:
+			1.simpleControllerHandlerAdapter
+			2.simpleServletHandlerAdapter
+			3.HttpRequestHandlerAdapter
+			4.RequestMappingHandlerAdapter
+
+			其中simpleControllerHandlerAdapter,simpleServletHandlerAdapter,HttpRequestHandlerAdapter的调用实现都非常简单
+
+		RequestMappingHandlerAdapter
+			RequestMappingHandlerAdapter继承了AbstractHandlerMethodAdapter
+
+			1.准备好请求参数,
+			2.使用处理器处理请求
+			3.将不同类型的结果组装成ModelAndView返回
+
+			1.请求参数的处理
+				1.都有哪些参数需要绑定?
+					1.根据方法来确定
+					2.标注了@ModelAttribute与@InitBinder注解的方法
+				2.请求参数的来源?
+					1.request中相关的参数,包含url,post传过来的参数,以及请求头所包含的值
+					2.cookie中的参数
+					3.session中的参数
+					4.设置到FlashMap中的参数(这种参数主要用户redirect的参数传递)
+					5.SessionAttribute传递的参数,这类参数通过@SessionAttribute注解的传递
+					6.通过了响应的注解了@ModelAttribute的方法进行设置的参数
+
+
+					2020-07-13 14:02
+					tips:
+						@InitBinder
+							这个注解的作用是初始化Binder的初始化工作,如,可以注册校验器,注册自己的参数编辑器等
+						eg:
+							使用
+							@InitBinder
+							public void initBinder(WebDataBinder binder) {
+								// do somethings...
+							}
+
+							可以注册自己的校验器,然后在校验器里面写自己的逻辑就可以了,使用@Valid或者@Validated注解
+
+						@ModelAttribute
+							可以使用在方法上,它将会在执行处理之前将参数设置到Model里面
+							eg:
+								// 执行前给Model设置了("className", "xxx.xxx.xxxController")
+								@ModelAttribute("className")
+								public void setModel() throws IOException {
+									return this.getClass().getName();
+								}
+
+								// 执行前给Model设置了("abc", "abc")
+								@ModelAttribute
+								public void setModel(Model model) {
+									model.addAttribute("abc", "abc");
+								}
+
+								// 执行前给model设置了("string", "excelib")
+								@ModelAttribute
+								public void setModel() {
+									return "excelib";
+								}
+
+
+							如果注解在方法的参数,则表示需要使用指定的ArgumentResolver来解析参数
+
+
+						如何使用?
+							@ControllerAdvice注解,可以将@InitBinder和@ModelAttribute注解放在里面,那么在调用所有的controller之前都会先去调用这些方法
+
+							@ControllerAdvice注解可以指定
+								1.value
+								2.basePackages
+								3.basePackageClasses
+								4.assignableTypes
+								5.annotations
+
+							ResponseBodyAdvice
+								实现这个接口的实现可以修改返回值直接作为ResponseBody类型的处理器的返回值
+								有两种类型的处理器会将返回值作为ResponseBody
+									1.返回值是HttpEntry类型
+									2.返回值前面注解了@ResponseBody
+								这两种处理器的返回值就可以被ResponseBodyAdvice的实现类修改.主要用修改json的返回值;
+								实现了ResponseBodyAdvice接口的实现类会相应的在处理器处理完请求之后被相应的ReturnValueHandler调用,ReturnValueHandler是用来处理Handler的返回值的,想要这些类生效,必须将其注册到springMVC容器里面,注册的方式有两种:
+									1.注册到RequestMappingHandlerAdapter中
+									2.实现ResponseBodyAdvice接口,添加@ControllerAdvice注解
+
+
+				3.具体的绑定方法
+
+			RequestMappingHandlerAdapter自身结构
+				1.afterPropertiesSet初始化逻辑,初始化了6大属性
+					1.argumentResolvers 用于给处理器方法和注释了@ModelAttribute的方法设置参数
+					2.initBinderArgumentResolvers 用于给注解了@InitBinder方法设置参数
+					3.returnValueHandler 用于将处理器的返回值处理成ModelAndView的方法设置参数
+					4.modelAndViewAdviceCache和initBinderAdviceCache: 
+						分别用于缓存@ControllerAdvice注解的类里面注解了@InitBinder和@ModelAttribute方法也就是全局的@ModelAttribute和@InitBinder方法;每个处理器自己的@ModelAttribute和@IinitBinder在第一次使用处理器请求的时缓存起来,这种做法既不需要启动时就花费时间遍历每个Controller查找@ModelAttribute和@InitBinder方法,又能在一次调用过后再调用相同处理器处理请求时不需要再次查找而从缓存里面获取,这两种思路类似于单例模式中的懒汉式和饿汉式
+					5.ResponseBodyAdvice 用来保存前面介绍过的实现ResponseBodyAdvice接口的实现类,可以修改ResponseBody的类
+
+
+				2.initControllerAdviceCache
+					1.获取了所有ControllerAdvice注解的bean
+					2.排序
+					3.获取没有添加@RequestMapping并且注解了@ModelAttribute注解的方法,添加到modelAttributeAdviceCache里面
+					4.获取添加@InitBinder注解的方法,添加到initBinderAdviceCache里面
+
+				3.handleInternal 请求方法的入口
+					1.检查是否有@SessionAttribute注解,这个是checkAndPrepare方法的前置条件
+					2.checkAndPrepare,WebContentGenerator定义,主要做了三件事
+						1.根据supportedMethods属性,对request类型是否支持进行判断
+						2.如果requireSession为true,则通过request.getSession(false)检查session是否存在
+						3.第三件事是给response设置缓存过期时间 applyCacheSeconds 给response添加缓存,这里就是简单的设置头信息
+
+						ps: @SessionAttribute扩展知识
+							注解使用在处理器类上,用于多个请求之间传递参数,类似于Session的Attribute,但是完全不一样,一般来说@SessionAttribute设置的参数只用暂时的传递,而不是长期保存
+
+							通过@SessionAttribute设置参数的方式有3类用法
+								1.在视图中,通过request.getAttribute或者session.getAttribute获取;
+								2.在后面请求返回的视图中,通过session.getAttribute或者model中获取
+								3.自动将参数设置到后面请求所对应的处理的Model类型的参数或者@ModelAttribute注解里面
+
+							怎么设置?
+								1.在@SessionAttribute注解设置了参数的名称或者类型
+								2.在处理中,将参数设置到了model中
+
+								@SessionAttribute用完之后,可以调用SessionStatus.setComplete来清除;SessionStatus可以设置在处理中的方法参数中
+
+					3.invokeHandleMethod 
+						1.用request和response创建ServletWebRequest,用于后面的ArgumentResolver
+						2.WebDataBinderFactory
+							WebDataBinderFactory是用来创建WebDataBinder对象的
+							WebDataBinder使用参数绑定,主要作用是实现参数和String类型的之间的转化,ArgumentResolver在参数解析过程中会使用到WebDataBinder,另外ModelFactory在更新Model的时候也会用到它
+
+							1.创建WebDataBinder的时候,会查询出注解了@InitBinder的方法,获取注解了InitBinder方法有两种方式,一种是全局配置,注解方法在ControllerAdvice上还有一种是在Controller类里面注解了@InitBinder方法
+							2.第二类的方式,会在第一次调用之后,添加到缓存里面,后面会直接从缓存里面获取
+						3.ModelFactory
+							1.将原来SessionAttribute的值设置到Model
+							2.执行了相应注解的@ModelAttribute的方法设置到Model
+							3.处理器中注解了@ModelAttribute的参数如果同时也在@SessionAttribute中配置了,而且在mavContainer还没有值;则从全部的SessionAttribute(有可能是其他处理设置的值)中查询出来并设置进去
+
+								对Model的更新是先对SessionAttribute进行设置,设置规则是如果处理器调用了SessionStatus#setComplete则将SessionAttribute清空,否则将mavContainer的defaultModel(可以理解为Model)中相应的参数设置到SessionAttribute中,然后按照需要给Model设置对应BindingResult
+						4.ServletInvocableHandlerMethod	
+							ServletinvocableHandlerMethod继承HandlerMethod并且可以直接执行,实际请求的处理就是通过他来执行的,参数绑定,请求处理以及返回值处理都通过它来完成createRequestMappingMethod
+								1.argumentResolver 						参数设置
+								2.returnValueResolver 				    返回值处理
+								3.binderFactory           				initBinder处理
+								4.parameterNameDiscoverer 				参数名称发现者
+
+						5.创建ModelAndViewContainer,并将相应参数设置到其Model中
+							新建ModelAndViewContainer类型的mavContainer参数,用于保存Model和View
+							1.将flashMap的内容设置到Model
+							2.使用ModelFactory将注解了@SessionAttribute和@ModelAttribute的方法的参数设置到Model
+							3.根据配置对ignoreDefaultModelOnRedirect进行设置
+						6.请求执行
+							直接调用requestMappingMethod(ServletInvocableHandlerMethod)的invokeAndhandle(webRequest, mavContainer);
+						7.请求处理完成后的一些后置处理
+							请求处理完成之后,主要在getModelAndView里面执行,主要处理了三件事
+							1.modelFactory更新model, updateModel会判断从ModelAndViewContainer里面获取model更新
+							2.根据mavContainer创建ModelAndView
+							3.如果mavContainer的model是属于RedirectAttribute,那么将其设置到flashMap里面
+
+				总结:
+					RequestMappingHandlerAdapter的作用是使用处理器处理请求,它使用的处理器是HandlerMethod类型,整个处理过程可以分为3步
+					1.绑定参数
+						参数的来源有6个
+						1.request中相关的参数(url的参数,post中的参数,以及请求头的中的参数)
+						2.cookie中的参数
+						3.session中的参数
+						4.设置到flashMap中的参数
+						5.@SessionAttribute中的参数
+						6.@ModelAttribute中的参数
+							前三类参数通过request管理,第四类参数直接通过RequestMappingHandlerAdapter中处理,在请求之前保存到model,请求处理完成之后如果需要则设置到flashMap里面,后两类通过modelFactory管理
+					2.执行请求
+					3.处理返回值
+
+			ModelAndViewContainer 
+				作用:
+					modelAndViewContainer承担着整个请求过程中数据的传递工作,它除了保存Model和View之外还有一些别的功能
+				属性解析:
+					1.view 									Object类型,可以是实际视图,也可以是String类型的逻辑视图
+					2.defaultModel 							默认使用的Model
+					3.redirectModel							redirect类型的model
+					4.sessionStatus 						用于SessionAttribute使用完的标识
+					5.ignoreDefaultModelOnRedirect			如果为true,处理器在返回redirect视图的时候,一定不使用defaultModel
+					6.redirectModelScenario 				处理器返回redirect视图的标志(scenario 预测,设想,方案)
+					7.requestHandled 						请求是否已经完成
+				解释:
+					defaultModel和redirectModel都是Model,前者是默认使用的model,后者是用于传递参数redirect时的参数;我们在处理器使用了Model或者ModelMap时,argumentResolver传入的是defaultModel,它是BindingAwareModelMap类型,继承了ModelMap也实现了Model接口;所以处理器中使用的ModelMap或者Model其实都是同一对象,Map参数传入的也是这个对象;处理器中RedirectAttribute类型的参数ArgumentResolver会传入redirectModel,它实际上是RedirectAttributeModelMap类型;
+					ModelAndViewContainer的getModel方法会根据条件返回两个model里面的一个;
+
+					requestHandled用于标示请求是否已经全部处理完成,如果是,就不再往下处理了,直接返回;这里指的全部处理完成主要指的response,比如,在处理器有@ResponseBody或者返回HttpEntity类型等情况都会讲requestHandled标记为true;
+
+			SessionAttributesHandler与SessionAttributeStore
+				SessionAttributesHandler用来处理@SessionAttribute注解的参数,不过它只做一些宏观的操作,比如,哪个handler可以缓存哪些参数,某个参数在SessionAttribute中是否存在,如何同时操作多个参数等,而具体的存储工作是由SessionAttributeStore完成,但是SessionAttributeStore也不是存储SessionAttribute的容易,它只是存储SessionAttribute的工具,具体是存储容器是Session,当然也可以使用别的容器,只要重写SessionAttributeStore然后设置到RequestMappingHandlerAdapter里面就可以了;
+
+				SessionAttributesHandler四个属性
+				1.attributeNames 							存储@SessionAttribute里value的值,也就是参数值
+				2.attributeTypes							存储@SessionAttribute里types的值,也就是参数类型
+				3.knownAttributeNames						用于存储所有已知可以被当前处理器处理的属性名
+																1.构造方法里,会将所有的attributeNames的值设置到knownAttributeNames里面
+																2.当调用isHandlerSessionAttribute方法检查,而且是当前的Handler管理的SessionAttributes也会添加到knownSessionAttributeNames,而保存属性的storeAttributes在每个属性保存前调用isHandlerSessionAttribute方法判断是否支持要保存的属性,所以所有保存的SessionAttribute都会在knownAttributeNames里面;
+																knownAttributeNames作用主要是保存了除了使用value配置的名称外还将通过types配置的已经保存过的属性名保存起来;这样,清空的时候只要遍历knownAttributeNames就可以了
+				4.sessionAttributeStore          			SessionAttributeStore用于Attribute的存储
+
+
+				基础操作以及原理
+					1.storeAttributes  						保存属性
+					2.retrieveAttributes 					取回属性
+					3.clearupAttributes 					清空属性
+
+
+			SessionAttributeStore
+				1.sessionAttributeStore是一个接口,它的默认实现类DefaultSessionAttributeStore,三个方法对应SessionAttributesHandler的三个功能
+					1.storeAttributes  						保存属性
+					2.retrieveAttributes 					取回属性
+					3.clearupAttributes 					清空属性
+
+				2.值得注意的是,这里对session的操作是request的setAttribute,getAttribute以及removeAttribute方法
+					这里虽然是request调用,但并不是设置到request里面,实际上这里的request是指的ServletWebRequest,这三个方法在其父类SerletRequestAtrribute里面定义了,他可以通过最后一个参数指定操作范围
+
+				SessionAttributesHandler是在modelFactory中使用的;
+
+			ModelFactory
+				modelFactory有两个作用
+					1.初始化model
+						初始化model主要是在执行器执行前将对应的参数设置到model里面,是通过调用initModel的方法完成,总共分成三步
+							1.从sessionAttributesHandler获取保存的参数,合并到mavContainer对象里面
+							2.invokeModelAttributeMethods方法,执行注解了@ModelAttribute的方法,并将结果设置到model
+								1.getNameForReturnValue 获取参数名规则的方法
+									1.获取注解@ModelAttribute的value,如果有value直接返回
+									2.没有则通过Conventions的getVariableNameForReturnType根据方法,返回值类型,返回值获取参数名,核心代码逻辑就是获取返回值类型的shortName	
+							3.判断既注解了@ModelAttribute又在@SessionAttribute注解方法中(参数名或者参数类型在注解中设置)的参数是否已经设置到mavContainer中,如果没有,则使用SessionAttributesHandler获取并设置到mavContainer中
+
+						初始化的步骤:
+							1.首先将当前处理器中保存的所有SessionAttributes属性合并到ModelAndViewContainer
+							2.然后执行注解了@ModelAttribute的方法的结果合并到mavContainer
+							3.如果注解了@ModelAttribute并且在@SessionAttribute中也设置了参数是否添加到了mavContainer,如果没有就从SessionAttribute里面获取添加进去,获取不到就抛出异常
+
+							整个的重点和难点是在于获取设置到Model中的参数名的规则
+
+						设置优先级
+							1.FlashMap中保存的参数优先级最高,它在ModelFactory之前执行
+							2.SessionAttribute中的参数第二,它不可以覆盖FlashMap中设置的参数,
+							3.注解了ModelAttribute方法设置的参数优先级第三,
+							4.注解了@ModelAttribute而且从SessionAttributes中获取的参数优先级最低,@ModelAttribute全局优先,处理器自己定义的次之
+
+					2.在执行器处理完成之后,将model中相应的参数更新SessionAttributes中
+						更新model是在updateModel方法完成的
+						1.对SessionAttribute进行设置
+							1.如果处理器调用了SessionStatus#setComplete则将SessionAttribute清空
+							2.否则将mavContainer的defaultModel中的相应的参数设置到SessionAttributes中
+						2.判断请求是否完成或者是否是redirect类型,其实就是判断需不需要渲染页面,如果需要渲染就将Model相应的参数设置到BindingResult
+
+						updateModel做了2件事,
+							1.维护SessionAttribute
+							2.给Model中需要的参数设置BindingResult,以供渲染视图使用
+
+			ServletInvocableHandlerMethod
+				ServletInvocableHandlerMethod也是一种HandlerMethod(用于封装Handler与其具体请求的Method,分别对应Handler和Method两个属性)
+
+
+			HandlerMethod
+				属性
+					1.bean 请求的handler对象
+					2.method 请求的method
+					3.beanFactory 根据传入的String作为beanName获取handler
+					4.bridgedMethod 如果method是bridge method则设置为其所对应的原有方法,否则直接设置成method
+					5.parameters 请求处理方法所需参数
+					这里所有的属性都是final的,所以创建之后就不能修改了
+
+				如果handler是string类型, 那么专门有一个方法createWithResolvedBean来操作将String类型的beanName变成Handler对象
+
+				MethodParameter 保存参数使用methodParameter
+					1.method    参数所在方法
+					2.constructor    参数的构造方法
+					3.parameterIndex    参数的序列
+					4.nestingLevel    嵌套级别,如果是复合参数会用到,比如有一个List<String> list的嵌套级别是1, String的嵌套级别是2
+					5.typeIndexesPerLevel    保存每层嵌套参数的序数
+					6.containerClass    容器类型,也就是参数所在方法的类
+					7.parameterType    参数的类型
+					8.genericParameterType    Type类型的参数类型,也是参数的类型,但是它的类型是Type
+					9.parameterAnnotation   参数的注释
+					10.parameterNameDisconverer    参数名称查找器
+					11.parameterName    参数名称
+
+
+				HandlerMethod封装了两个内部类来封装参数,一个封装方法调用的参数,一个封装方法返回的参数;它们主要使用method和parameterIndex来创建MethodParameter
+				,封装返回的ReturnValueMethodParameter继承自封装的调用参数的HandlerMethodParameter,它们使用的method都是bridgedMethod,返回值使用的parameterIndex是-1
+
+
+			InvocableHandlerMethod
+				invocableHandlerMethod继承自HandlerMethod,在父类的基础上,添加了调用的功能,也就是说可以直接调用method;这里的method指的bridgedMethod;
+
+				属性:
+					1.dataBinderFactory webDataBinderFactory类型,可以创建WebDataBinder,用于参数解析器ArgumentResolver中
+					2.argumentResolver HandlerMethodArgumentResolverComposite类型,用于解析参数
+					3.parameterNameDisConverer ParameterNameDisConverer类型,用来获取参数名,用于MethodParameter中
+
+				InvocableHandlerMethod中Method调用的方法是invokeForRequest
+					整个mvc中最核心的代码逻辑,调用处理器中的方法
+					这里的处理先让method变成可调用,也就是说,Controller中就算是private的方法也可以调用
+					
+					getMethodArgumentValues 方法解析,这个方法是解析参数
+						1.调用父类的方法getMethodParameter获取参数
+						2.给parameter设置参数名解析器
+						3.给parameter设置containerClass与parameterType
+						4.如果相应参数类型已经在providedArgs中提供了,那么直接设置到parameter
+						5.使用argumentResolver解析参数
+						6.没有解析出参数,抛出异常
+
+						总结:
+							先调用父类的geMethodParameter方法,然后遍历每个参数进行解析,解析的方法有两种,第一种是在providedArgs里面找,第二种是使用argumentResolver进行解析
+							每个参数在解析前都初始化了三个参数,parameterNameDiscoverer,containerClass,parameterType,parameterNameDiscoverer在RequestMappingHandlerAdapter定义时配置了,默认的配置是DefaultParameterNameDiscoverer,containerClass,parameterType分别代表容器类型(就是所属的类)与参数类型
+
+
+			ServletInvocableHandlerMethod
+				ServletInvocableHandlerMethod继承自InvocableHandlerMethod,在父类的基础上添加了三个功能
+					1.对@ResponseStatus的支持
+					2.对返回值的处理
+					3.对异常结果的处理
+
+					@ResponseStatus注解用于处理器方法或者返回值上,作用是对response和status进行设置,它有两个参数,value和reason
+						value是HttpStatus类型,不能为空
+						reason是String类型,表示错误的原因,默认是null
+
+						当一个方法注解了@ResponseStatus,返回的response会使用注解中的status,如果处理器返回的结果为空或者reason不为空,那么会中断处理直接返回(不再渲染页面)
+
+				对返回值的处理是通过returnValueHandlers属性完成的,它是HandlerMethodReturnValueHandler的属性,异常处理是通过两个内部类完成
+
+				核心执行方法invokeAndHanle
+					1.调用父类InvocableHandlerMethod的invokeForRequest方法执行处理器的方法
+					2.处理@ResponseStatus注解-->setResponseStatus
+						1.判断responseStatus是不是null
+						2.如果不是null,那么就设置返回值
+					3.处理返回值
+						1.判断返回值是不是为空,如果为null,request的notModified为真,注解了ResponseStatus,mavContainer的requestHandled为true三个条件只要有一个为true则将请求设置成已处理并返回
+						2.返回值不为null
+							1.@ResponseStatus的注解如果存在,也会将其设置成请求已处理并返回
+							2.如果没有@ResponseStatus注解,那么将mavContainer的requestHandled设置成false,请求返回值交给returnValueHandlers对象处理
+
+			HandleMethodArgumentResolver
+				handlerMethodArgumentResolver是用来为处理器解析参数的;每个resolver对应一种类型的参数
+				HandlerMethodArgumentResolverComposite是一个比较特殊的类,它并不解析具体参数,但是包含多个别的解析器在其中,解析工作调用其它解析器处理
+
+				HandlerMethodArgumentResolver接口有两个方法
+					1.判断使用能够解析参数 supportsParameter
+					2.另一个用于实际解析参数返回解析结果 resolveArgument
+
+					HandlerMethodArgumentResolver的实现类一般有两种类型
+						1.xxxArgumentResolver 用于解析参数
+						2.xxxMethodProcess 用于解析参数,还可以处理相应的返回值
+
+				PathVariableMethodArgumentResolver
+					用于解析@Pathvariable注解的参数,用于解析url中的值
+					PathvariableMethodArgumentResolver继承与AbstractNameValueMethodArgumentResolver
+					AbstractNameValueMethodArgumentResolver是处理nameValue类型参数的基类,cookie,requestParam,requestHeader,pathVariable等类型都是继承与这个类
+
+					使用的是模板方法,在AbstractNameValueMethodArgumentResolver的resolveArgument方法主要的处理逻辑如下
+						1.获取参数类型
+						2.根据参数获取NameValueInfo
+						3.解析参数resolveName,模板方法交给子类实现
+						4.如果binderFactory不为空,则用它创建binder并转换解析出的参数(如果需要转换)
+						5.对解析处理的参数进行后置处理
+
+						先解析出来的值是NameValueInfo,这是一个内部类,包含了三个属性
+							1.name 参数名
+							2.required 是否必须存在
+							2.defaultValue 默认值
+
+						对解析出的参数进行设置
+							1.判断参数是否为null
+								1.是否有默认值,如果有默认值,则设置默认值resolveDefaultValue
+								2.没有没有默认值,	调用子类的处理必须参数没有设值问题handleMissingValue
+								3.调用子类方法设置null值handleNullValue
+							2.如果为空字符串,并且默认值不为空
+								调用子类设置默认值resolveDefaultValue
+							3.binderFactory不为空,则使用binderFactory创建binder,并将解析出来的参数设置进去
+							4.最后使用handleResolvedValue方法对解析出来的参数进行设置
+
+						getNamedValueInfo方法是通过参数获取NamedValueInfo,
+							1.先从缓存里面获取
+							2.如果缓存没有,则创建一个,使用@PathVariable的value作为name
+							3.如果name为空字符串,name则将parameter的参数名称作为name,如果默认值为空,那么则设置成null,返回一个新的NamedValueInfo
+							4.添加到缓存里面
+
+						resolveName方法
+							这里是直接从request里面获取,是通过HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE值获取的,这个值是在RequestMappingInfoHandlerMapping中的handleMatch中设置,也就是说,这个值是在HandlerMapping中根据lookupPath找到处理请求的处理器后设置的
+						
+					@PathVariable和@MatrixVariable
+						1.@PathVariable是指在路径中获取值
+							eg:
+								/find/user/1
+								@RequestMapping(value = "/find/user/{id}")
+								public String find(@PathVariable Long id)
+								public String find(@PathVariable("id") Long userId)
+
+						2.@MatrixVariable 是指在路径中的一些属性,这些值通常使用";"或者","设置
+							";"分号是隔离属性, ","是分隔属性的内的值
+							@MatrixVariable
+								1.pathVar 指定属于哪个pathVariable的属性
+								2.required 设置属性值是否必须
+								3.defaultValue 指定默认值
+								4.value 指定名称
+
+							eg:
+								/find/user/canon;gender=male
+								@RequestMapping(value = "/find/user/{name}")
+								public String find(@PathVariable Long name, @MatrixVariable String gender)
+
+								/find/user/canon;gender=male;roles=root,leader,manager
+								@RequestMapping(value = "/find/user/{name}")
+								public String find(@PathVariable Long name, @MatrixVariable String gender, @MatrixVariable Set<String> roles)
+
+							@MatrixVariable也可以设置成使用Map的方式去接收返回值
+
+							如何使用?
+								需要对RequestMappingHandlerMapping中的removeSemicolonContent设置为false
+								也可以使用<mvc: annotation-driven/> 设置,设置成<mvc: annotation-driven enable-matrix-variables="true"/>
+
+								removeSemicolonContent用于是否删除url中分号的相关的内容,它的作用应该是防止注入用的;
+
+			HandlerMethodReturnValueHandler
+				HandlerMethodReturnValueHandler是用在ServletInvocableHandlerMethod中,作用是处理执行器的返回结果,主要功能点有三个
+					1.添加相应参数到model
+					2.设置view
+					3.如果请求处理完成则设置mavContainer的requestHandled为true
+
+				HandlerMethodReturnValueHandler的处理方式与HandlerMethodArgumentResolver的处理方式类似,也是一个接口,两个方法
+					1.supportsReturnType 是否支持处理返回值
+					2.handleReturnValue 处理放回值
+
+				实现类中也有一个特殊的类HandlerMethodReturnValueHandlerComposite,这个类的作用和HandlerMethodArgumentResolverComposite作用类似;都是不进行具体业务处理,而是使用内部封装组件进行处理
+
+				ViewNameMethodReturnValueHandler
+					1.判断supportsReturnType 返回值是否是void或者string类型来确定是否支持这种类型的返回值的处理
+					2.handlerReturnValue判断返回值是否为null
+						1.如果是null直接返回
+						2.不是null,设置到mavContainer的view里面,并且判断返回值是否为redirect类型,如果是则将mavContainer的redirectModelScenario为true
+						3.如果不是void也不是String类型,那么则抛出异常;不过正常来说只有void和String类型才能进来,一般来说是不会抛异常的
+
+
+		总结:
+			HandlerAdapter具体实现方式
+				HandlerAdapter继承结构比较简单,只有5个实现类,其中一个还被弃用了(AnnotationMethodHandlerAdapter),其中比较重要的是RequestMappingHandlerAdapter
+
+			RequestMappingHandlerAdapter应该是整个mvc中最复杂的组件,整个处理流程可以分成三步走
+				1.解析参数
+					1.参数从model中来, FlashMapManager和ModelFactory管理
+					2.参数从request中来, 
+
+					具体的参数解析都是通过各种resolver来解析的
+				2.执行请求
+					1.执行请求是使用HandlerMethod的子类ServletInvocableHandlerMethod,实际执行的InvocableHandlerMethod
+				3.处理返回值
+					1.返回值使用HandlerMethodReturnValueHandler进行解析的
+
+	ViewResolver
+		ViewResolver是视图解析器,主要做两件事情
+			1.解析出使用的模板
+			2.解析出视图的类型
+
+		ViewResolver整体来说可以分成四大类
+			1.AbstractCachingViewResolver
+			2.BeanNameViewResolver
+			3.ContentNogotiatingViewResolver
+			4.ViewResolverComposite
+		后三种类型,只有一个实现类,但是AbstractCachingViewResolver却有很多实现类,因为AbstractCachingViewResolver是所有可以缓存解析过的基类,而逻辑视图和视图的关系一般是不变的,不需要每次都解析,最好解析过一次就缓存起来
+
+
+		ViewResolverComposite
+			这个类封装了很多ViewResolver,ViewResolverComposite除了对ViewResolver遍历进行必要的初始化外,还实现了ApplicationContextAware接口,ServletContext接口,InitializingBean接口
+
+			xxxComposite这种类型的类,主要的工作并不直接参数具体的业务逻辑处理工作,而是将组件初始化,封装,通过一个统一的入口提供给外部调用,然后内部调用组件实现具体的解析工作
+
+			ContentNegotiatingViewResolver
+				ContentNegotiatingViewResolver解析器的作用是在别的解析器解析的结果上增加了对Media-Type和后缀的支持,Media-Type即媒体类型,有的地方也叫Content-Type
+				视图的解析过程并不是由自己解析完成,整个解析的过程如下
+					1.遍历锁封装的ViewResolver,可能会找到多个视图
+					2.使用request或者Media-Type9(content-Type)也可能会有多种结果
+					3.根据两种结果匹配查询出最优的视图
+
+				ContentNegotiatingViewResolver的viewResolvers有两种设置方式
+					1.手动设置
+					2.没有手动设置的话,将从spring上下文获取除他自己之外的所有ViewResolver并设置到viewResolvers
+
+				解析视图的方法在resolveViewName
+					1.使用request获取media-Type
+					2.获取所有候选视图,内部通过遍历封装的viewResolvers来解析
+					3.从多个视图候选中,找出最优视图
+						1.判断是否有redirect视图,如果有,直接返回
+						2.遍历从request中找到的Media-Type,从视图中获取media-type,返回第一个匹配到的对象,并且将视图的SELECTED_CONTENT_TYPE和media-tpye放到request里面
+
+			AbstractCachingViewResolver
+				AbstractCachingViewResolver是从缓存中获取视图对象,当需要解析视图的时候就会从缓存里面获取
+				它的直接继承类有3个
+					1.ResourceBundleViewResolver
+					2.XmlViewResolver
+					3.UrlBaseViewResolver
+
+				ResourceBundleViewResolver是通过properties属性配置文件解析视图的,XmlViewResolver跟ResourceBundleViewResolver用法很类似,只不过它使用了xml配置文件,UrlBaseViewResolver是所有直接将逻辑视图作为url查找模板文件的ViewResolver的基类,因为它设置了一个统一查找模板的规则,所以它的子类只需要确定渲染方式也就是视图类型就可以了,它的每一个子类对应一种视图类型
+
+				ResourceBundleViewResolver与XmlViewResolver的加载
+					1.通过Locale将相应的配置文件加载到BeanFactory,然后直接将逻辑视图作为BeanName直接从BeanFactory里面获取就可以了它们两个的loadView的代码都是一样的
+
+
+				resolverViewName
+					1.判断是否开启了缓存,如果没有开启,直接从createView里面获取
+					2.开启了缓存,先从缓存里面获取,没有则直接调用createView
+					3.createView方法调用了loadView方法,ResourceBundleViewResolver与XmlViewResolver都是从BeanFactory里面获取
+
+					isCache方法就是判断了CacheLimit的值是否大于0,如果CacheLimit等于0就是不开启缓存
+
+					知识点:
+						LinkedHashMap 中的自动删除功能, LinkedHashMap保存是有序的,但是除了这点之外还有另外一个功能,它可以自动删除最前面保存的值;
+						LinkedHashMap 中有一个removeEldestEntry方法,如果这个方法返回true,那么map最前面添加的内容将会被删除,它是在put或者putAll方法之后自动调用的,这个功能主要用在缓存中,防止缓存无限增长,这个removeEldestEntry默认是false,默认是不删除的
+						LinkedHashMap中的accessOrder这个属性的作用主要体现在排序上
+
+						这其实是一个钩子程序,就是简单来说,它是重写了HashMap的addEntry的方法,在addEntry方法中添加了removeEldestEntry方法,提供一个删除最前面内容的程序
+
+					ConcurrentHashMap与LinkedHashMap 同时使用,缓存从ConcurrentHashMap里面获取,LinkedHashMap提供的限制缓存数量的作用,可以应对高并发量的请求,但是同时又限制缓存的数量,踏马的,spring的代码是真的好踏马优秀
+
+			UrlBasedViewResolver
+				UrlBasedViewResolver重写了父类的3个方法
+					1.getCacheKey 直接返回viewName,父类是viewName + locale;从这里也可以看出,urlBasedViewResolver不支持locale
+					2.createView
+						1.判断是否是redirect类型的视图,如果是,返回RedirectView并且加入spring的生命周期控制
+							getApplicationContext().getAutowireCapableBeanFactory().initializeBean(view, viewName);
+						2.如果是forward类型的,那么直接返回InternalResourceView视图
+						3.如果都不是,直接调用父类的createView方法,父类的createView方法会直接调用loadView方法
+					3.loadView 
+						1.使用buildView方法创建了View
+							1.如果content-Type不为null,将其设置给View,可以在ViewResolver中配置
+							2.如果exposePathVariables不为null,那么将其设置给view;它用于标识是否让view使用pathVariables,可以在ViewResolver中配置,pathVariables就是处理器中@PathVariable的参数
+							3.exposeContextBeansAsAttributes不为null,将其值设置给view,它用于标识是否可以让view使用容器中的bean
+							4.exposeContextBeanNames 如果exposeContextBeanNames不为null,就将其设置给view,它用于view可以使用容器中哪些bean,在view中配置
+						2.使用applyLifecycleMethods对创建的view进行初始化
+						3.检查视图对应的模板是否存在,存在就返回视图,不存在就返回null,交给下一个视图处理
+
+				UrlBasedViewResolver的子类主要3件事
+					1.重写父类的requireViewClass,返回确认的视图类型
+					2.使用setViewClass方法设置所用的视图类型
+					3.给创建出来的视图设置一些属性
+
+		总结:
+			ViewResolver接口大部分子类都实现了AbstractCachingViewResolver抽象类,AbstractCachingViewResolver提供了缓存的统一解决方案,子类中有ResourceBundleViewResolver与XmlViewResolver,它们都是通过配置文件(properties,xml)的方式查询视图.UrlBasedViewResolver添加前后缀后用作url,子类只需要提供相应的视图类就可以了
+			除了AbstractCachingViewResolver外,还有三个类
+				1.BeanNameViewResolver 通过beanName在spring中查找相应的bean来作为view
+				2.ContentNegotiatingViewResolver 使用内部封装的viewResolver,再用media-type找出最优匹配视图
+				3.ViewResolverComposite 使用内部封装的viewResolver解析
+			这3个类中,第一个是直接从Spring容器中获取,第二和第三个都是从内部的viewResolvers解析出来的,因此不需要缓存;
+			视图的核心工作就是查找模板文件和视图类型,因此viewName是查询主要参数,locale只是辅助参数;这样就产生了三种解析思路
+				1.使用viewName查找模板文件
+				2.使用viewName查找视图类型
+				3.使用viewName同时查找模板文件和视图类型
+
+				第一种思路对应UrlBasedViewResolver,第二种思路对应BeanNameViewResolver,第三种思路对应ResourceBundleViewResolver与XmlViewResolver
+				不是每一种请求都需要viewResolver来解析,只有执行返回的view是string类型的时候才需要它来解析
+
+	RequestToViewNameTranslator
+		RequestToViewNameTranslator可以作为在处理器返回的view为空时使用它根据在request获取viewName;springmvc只提供了一个实现类,DefaultRequestToViewNameTranslator
+		getViewName
+			1.从request中获取lookuppath
+			2.调用transformPath方法,拿到viewName
+
+	HandlerExceptionResolver
+		HandlerExceptionResolver是处理执行请求期间的异常
+		HandlerExceptionResolverComposite作为容器使用,可以封装别的Resolver
+
+		HandlerExceptionResolver主要实现类都继承与AbstractHandlerExceptionResolver,它有5个子类,其中AnnotationHandlerExceptionResolver已经弃用了
+			1.ExceptionHandlerExceptionResolver 与父类AbstractHandlerExceptionResolver一起处理@ExceptionHandler注解的方法,进行异常解析的功能
+			2.DefaultHandlerExceptionResolver 按不同类型分别对异常进行解析
+			3.ResponseStatusHandlerExceptionResolver 针对@ResponseStatus异常进行处理
+			4.SimpleMappingHandlerExceptionResolver 通过配置的异常类和view的对应关系来解析异常
+
+		异常解析的过程主要可以做两件事
+			1.给modelAndView设置相应内容
+			2.设置response一些属性
+
+			当然还可以做一些辅助功能,如纪录日志等
+
+		AbstractHandlerExceptionResolver
+			AbstractHandlerExceptionResolver是所有直接解析异常的父类,里面定义了通用的解析流程,使用了模板模式,子类只需要实现resolveException方法
+			resolveException方法
+				1.shouldApplyTo 判断当前异常处理器是否支持处理当前处理器的异常; 如果两个集合都没有配置,那么就处理所有异常
+				2.如果不可以则返回null,交给下一个异常处理器去处理
+				3.如果可以
+					1.记录日志
+					2.设置response
+					3.执行doResolveException, doResolveException是一个模板方法,交由子类去实现
+
+			属性
+				1.mappedHandlers  用于配置处理器的集合
+				2.mappedHandlerClasses 用于配置处理器类型的集合
+
+		ExceptionHandlerExceptionResolver
+			ExceptionHandlerExceptionResolver继承AbstractHandlerMethodExceptionResolver,AbstractHandlerMethodExceptionResolver继承了AbstractHandlerExceptionResolver,AbstractHandlerMethodExceptionResolver重写了shouldApplyTo方法
+
+			AbstractHandlerMethodExceptionResolver实际将请求交给了模板方法doResolverHandlerMethodException,AbstractHandlerMethodExceptionResolver相当于一个适配器,一般处理器是类的形式,但是HandlerMethod其实是将方法作为处理器来使用的,所以要进行适配
+				1.如果为null,交给父类的shouldApplyTo方法处理
+				2.如果是HandlerMethod,那么找到其所属的bean(handler),然后交由父类处理
+				3.如果都不是直接返回false,交给下一个resolver处理
+
+			doResolverHandlerMethodException方法
+			ExceptionHandlerMethodExceptionResolver相当于一个简化版的RequestMappingHandlerAdapter,它的执行过程也是使用的ServletInvocableHandlerMethod,首先根据HandlerMethod和exception将其创建出来(大致过程是在处理器类中找出所有注释了@ExceptionHandler的方法),然后根据其配置的异常和需要解析的异常进行匹配,然后设置argumentResolvers和returnValueHandlers,接着调用invokeAndHandler方法,最后将结果封装成ModelAndView返回
+
+			spring的工具类
+				HandlerMethodSelector 
+
+		DefaultHandlerExceptionResolver
+			DefaultHandlerExceptionResolver的解析过程是根据类型不同,使用不同的方法进行处理
+			doHandlerExceptionResolver方法,判断属于什么类型的异常,然后设置response
+
+		ResponseStatusExceptionResolver
+			ResponseStatusExceptionResolver用来处理注解了@ResponseStatus的异常
+				doResolverException
+					1.是否存在@ResponseStatus
+					2.如果存在调用resolveResponseStatus
+						1.设置response	
+
+		simpleMappingExceptionResolver
+			SimpleMappingExceptionResolver需要提前配置异常类和view的对应关系然后才能使用
+			doResolveException
+				1.调用determineViewName 根据exception和request查询出viewName
+					1.从excludeExceptions里面获取,如果能匹配到,那么证明不用处理,返回null
+					2.如果exceptionMappings不为null,那么调用findMatchViewName
+						1.匹配的规则是,只要当前异常属于,配置的异常或者是配置异常的子类就可以了
+					3.如果获取不到,但是defaultErrorView不为空,则返回defaultErrorView
+				2.如果viewName为null, 返回null
+				3.如果viewName不为null
+					1.根据viewName获取异常编码,从statusCodes里面获取,如果获取不到,返回defaultStatusCode
+					2.设置到response和request里面
+					3.调用getModelAndView生成ModelAndView返回,生成过程是将解析出来的viewName解析成View,如果exceptionAttribute不为null,则添加到Model里面
+
+			exceptionMappings 用于配置异常类(字符串类型)和viewName的对应关系,异常类可以是异常(包含包名的完整名)的一部分,也可以是异常父类的一部分
+			excludeExceptions 用于配置不处理的异常
+			defaultErrorView 用于配置无法从exceptionMappings中解析出视图的时候使用的默认视图
+			statusCodes 用于配置解析出来的viewName和statusCode的对应关系
+			defaultStatusCode 当statusCodes无法解析出statusCode的使用的默认statusCode
+			exceptionAttribute 用于配置异常保存在model里面的参数名,默认为"exception",当exceptionAttribute为null的时候不保存
+
+	MultipartResolver
+		MultipartResolver用于文件上传有两个实现类
+
+		StandardServletMultipartResolver
+			使用的servlet3.0标准文件上传方式,在servlet3.0中上传文件很简单,只要需要调用request和getParts方法就可以获取所有上传的文件,如果想获取单个文件可以使用request.getPart(fileName),获取到Part后直接调用它刀write(saveFileName)方法就可以文件保存以saveFileName为文件名的文件,也可以调用getInputStream获取InputStream,如果想使用这种方式需要在配置上传文件的servlet时添加multipart-config属性
+
+			可以配置在DispatcherServlet里面
+			multipart有4个属性
+				1.设置上传文件的根目录
+				2.max-file-size 设置单个上传文件的最大值,默认值是-1时,表示无限制
+				3.max-request=size 设置一次所有文件上传的总和的最大值,默认是-1,表示无限制
+				4.file-size-threshold 设置不写入硬盘得最大数据量,默认值是0;代表所有上传的文件都会作为一个临时文件写入到硬盘
+
+			判断是否是上传请求isMultipart
+				1.判断是否是post请求,如果不是post请求,直接返回false
+				2.判断content-Type是否"/multipart"开头,如果是,那么就是上传请求
+
+			resolverMultipart
+				返回一个StandardMultipartHttpServletRequest实例,传入一个request对象
+				StandardMultipartHttpServletRequest就是根据getPart构建了文件,以便处理器调用
+				Part对象
+
+		CommonsMultipartResolver
+			isMultipart
+				1.判断request是否为null,如果不为null那么将request交给ServletFileUpload.isMultipartContent(request)来判断是否上传请求
+					ServletFileUpload是apache的commons包的一个类,isMultipartContent这个判断也很简单,就是判断content-Type是否以"multipart"开头
+
+			resolveMultipart
+				1.resolveLazily 上传不同处理方式
+				2.两种处理方式都是将request转成DefaultMultipartHttpServletRequest对象
+				3.parseRequest处理request
+					1.使用commons-fileupload中FileUpload组件解析出fileItems
+					2.调用parseFileItems方法将fileItems分成参数和文件两大类,并设置到三个map中,三个map分别用于保存参数,参数的content-Type和上传文件
+
+			clearupMultipart
+				1.判断request是否为null,如果不为null就调用了clearupFileItems清理缓存
+					1.获取request里面的multiFileMap,然后遍历删除文件
+
+
+		总结
+			mvc的上传有两种方式,一种是servlet的标准的上传格式,一种是基于apache的commons-fileupload;MultipartResolver的作用就是将上传请求包装成可以直接获取file的request,从而方便操作,所以MultipartResolver的重点是从request中解析出上传的文件并设置到相应的上传类型的request中,具体的解析上传文件的过程使用了servlet的标准上传	和apache的common-fileupload两种方式来完成,它们的request分别为StandardMultipartHttpServletRequest和DefaultMultipartHttpServletRequest类型
+
+	LocalResolver
+		LocaleResolver的作用是使用request解析出Locale
+			1.AcceptHeaderLocaleResolver直接使用了Header里的"acceptlanguage",不可以在程序中修改
+			2.FixedLocaleResolver用于解析出固定的Locale,也就是创建的时候就固定好了Locale,无法修改
+			3.SessionLocaleResolver用于将Locale设置session里面,可以修改
+			4.CookieLocaleResolver用于将Locale保存到cookie里面,可以修改
+
+		AbstractLocaleResolver
+			定义了一个defaultLocale
+
+	ThemeResolver
+		ThemeResolver用于根据request解析theme
+			1.AbstractThemeResolver设置了默认的主题名defaultThemeName属性
+			2.FixedThemeResolver用于解析固定的主题名,主题名在创建时设置,不能修改
+			3.SessionThemeResolver将主题保存到session中,可以修改
+			4.CookieThemeResolver 将主题保存在cookie中,可以修改它为了方便处理Cookie而继承了CookieGenerator,所以就不能继承AbstractThemeResolver,它自己实现了对默认主题的支持
+
+	FlashMapManager
+		FlashMapManager用来管理FlashMap,FlashMap用于管理在redirect时传递参数
+			1.AbstractFlashMapManager 采用模板模式定义整体流程
+			2.SessionFlashMapManager 通过模板方法操作flashMap的具体功能
+
+		1.Session中保存的FlashMap类型是List<FlashMap>,也就是一个Session可以保存多个FlashMap
+		2.FlashMap继承自HashMap,它除了具有HashMap的功能和设置有效期,还可以保存Redirect后的目标路径和通过url传递的参数
+
+		这两项内容主要是用来查找Session保存的多个FlashMap中属于当前的请求的FlashMap
+
+		AbstractFlashMapManager
+			1.saveOutputFlashMap
+				1.对flashMap中的转发地址和参数进行编码,这里的request主要用来获取当前编码方式,编码格式有request获取
+				2.设置有效期 默认时间是180si
+				3.获取互斥变量,是模板方法,如果子类返回值不为null则同步执行,否则不需要同步
+				4.取回保存的List<FlashMap>,如果没有就创建一个,然后添加现有的FlashMap
+				5.retrieveFlashMaps用于获取List<FlashMap>,是模板方法,子类实现
+				6.updateFlashMaps 添加到List<FlashMap>更新到存储介质,是模板方法,由子类实现
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
