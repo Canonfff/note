@@ -1127,6 +1127,80 @@ springmvc之前读过一部分源码;现在需要更加细致的阅读一下
 				5.retrieveFlashMaps用于获取List<FlashMap>,是模板方法,子类实现
 				6.updateFlashMaps 添加到List<FlashMap>更新到存储介质,是模板方法,由子类实现
 
+
+
+
+总结:
+	springMVC原理总结
+		SpringMVC本质就是一个servlet,Servlet运行需要一个Servlet容器,如常用的tomcat,jetty等;servlet容器帮我们统一做了像底层socket连接那种通用但又很麻烦的工作,让我们开发网站变的简单只要按照servlet接口去做就可以了,而springmvc又在此基础上做了一套通用的解决方案,这样我们连servlet都不用写了,而只需要写最核心的代码就可以了,而且springMVC非常灵活,只要我们能想到的用法,springMVC几乎都可以做到
+
+		tomcat可以分成两部分
+			1.接连器
+				1.连接器专门用来处理网络相关的事情,如socket连接,request封装,连接线程池维护等工作
+			2.容器
+				容器用来存放我们编写的网站程序
+				tomcat中一共有4层容器
+					1.Engine
+						Engine是引擎,一个容器只有一个
+					2.host
+						host对应一个站点,如不同的域名
+					3.context
+						context对应一个应用,如webapps/ROOT中存放的是主应用,对应一个站点的根路径
+						webapps下别的目录存放着别的应用,如webapps/test对应着站点的test的应用,路径是www.xxx.com/test
+						webapps下的应用都对应着同一个站点,它们每一个都对应着一个context
+						如果想添加一个新站点,如www.bbb.com,则需要使用host;
+						一套容器和多个连接器组成一个service,一个tomcat中可以有多个service
+					4.wrapper
+						wrapper对应servlet,一个servlet对应一个wrapper
+
+			servlet接口一共定义了5个方法,其中init方法和destroy用于初始化和销毁servlet;整个生命周期只会调用一次;service方法处理请求,getServletConfig方法获取ServletConfig可以获取init-param配置的参数,还可以获取servletContext;getServletInfo可以获取一些和servlet相关的信息,如作者,版权等,这个方法需要自己实现,默认返回空字符串
+
+			java提供了两个servlet的实现类
+				1.httpServlet
+					1.将ServletRequest和ServletResponse转成HttpServletRequest和HttpServletResponse
+					2.根据Http请求类型,将请求路由到了7个不同的方法
+				2.GenericServlet
+					1.实现了ServletConfig接口,让我们可以直接调用ServletConfig的方法
+					2.提供了无参的init方法
+					3.提供了log方法
+
+		SpringMVC本质就是一个Servlet,这个Servlet继承了HttpServlet;SpringMVC提供了三个层次的Servlet
+			1.HttpServletBean
+				1.继承HttpServlet,将Servlet中配置的参数设置到相应的属性中
+			2.FrameworkServlet
+				1.初始了WebApplicationContext
+				2.将请求都转发到了processRequest方法
+				3.调用了doService模板方法处理具体请求,doService在DispatcherServlet中实现
+				4.将当前请求的LocaleContext和ServletRequestAttributes设置到LocaleContextHolder和RequestContextHolder里面
+				5.请求处理完成之后发布了一个ServletRequestHandledEvent事件
+			3.DispatcherServlet
+				1.初始化了处理请求的9大组件
+				2.根据request找到Handler
+				3.根据Handler找到对应的HandlerAdapter
+				4.用HandlerAdapter调用Handler处理请求
+				5.调用processDispatchResult方法处理Handler处理之后的结果(主要处理异常信息和渲染View输出给用户)
+
+			HttpServletBean直接继承java的HttpServlet,HttpServletBean用于将Servlet中配置的参数设置到相应的属性中,frameworkServlet初始化了SpringMVC中所使用的WebApplicationContext,具体处理请求的9大组件是在DispatcherServlet初始化的
+
+	异步请求:
+		Http协议是单向的,所以只能客户端自己拉数据,不能服务器主动推,servlet异步请求的支持并没有修改http协议,而是对http的巧妙应用,异步请求的核心分成两大类:
+			1.轮询请求
+				不断请求服务器,检查有没有需要返回的数据,比较浪费资源
+			2.长连接
+				长连接的原理是在发起请求之后,服务器处理并返回请求但不关闭连接,关闭的只是处理请求的那个线程(一般在回收的线程里面);只有在全部异步请求完成之后才会关闭连接
+
+		在servlet3.0规范中使用异步请求处理非常简单,只要在请求过程中调用request的startAsync方法就可以了,其返回值是AsyncContext类型
+			Async在异步请求中充当着非常重要的角色,可以称为异步请求上下文,也可以称为异步请求容器
+
+
+
+观后语:
+	这本书,前前后后一共看了2,3遍了,第一遍走马观花,第二遍仔细阅读;其实在看书过程中,还是能学习到不少的知识,自己的在这方面的知识点也确实缺乏,欠下了不少的技术债;关于springMVC的用法也比之前来的更加的清晰,认知也比之前多了不少,其实自己对于这本书的理解程度远远谈不上吃透,只能说,在相比之前的时候有了更多了理解;书本也是这样,别人所说的可能只是他庞大知识体系中的一环,我所听到和理解的也可能只是别人所说的一部分,所以查漏补缺很重要,必须围绕自己建立自己的知识体系,完整自己的知识架构;仅仅跟着一本书,或者一个作者,是无法形成完整的知识体系的,所以,我在后面又补充了几本有关于spring知识的书籍,不得不说;虽然我都是走马观花的看了一遍,但是从中学习到的知识,不算少,了解了之前很多自己未曾了解过的知识,这样的乐趣实在挺美妙的;
+	努力学习,并不是我想获取什么什么,而是,我真正感受到了编程的乐趣,编程不只是我养家糊口的一种工具,而是我在漫长的生命中持续不断获取快乐的一份兴趣所在;
+	给未来的自己
+
+
+
     
 
 

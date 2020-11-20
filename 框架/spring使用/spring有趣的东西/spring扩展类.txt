@@ -1,0 +1,19 @@
+记录一下spring框架本身很有趣的东西
+
+BeanPostProcessor 	bean的后置处理器
+
+
+InitializingBean 	bean初始化
+
+
+DisPosableBean 		bean容器销毁bean
+
+
+BeanDefinitionRegistryPostProcessor		beanDefinition注册后置处理器
+
+
+beanFactory注册单例信息
+beanFactory.registerSingleton(MESSAGE_SOURCE_BEAN_NAME, this.messageSource);
+
+添加单例
+addSingleton()

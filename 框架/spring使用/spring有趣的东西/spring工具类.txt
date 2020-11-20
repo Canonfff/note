@@ -1,0 +1,14 @@
+spring框架本身一些很好用的工具类
+
+ClassUtils		class工具类
+
+MethodIntrospector	method工具类 支持class筛选method,method过滤等操作,可自定义
+
+AnnotatedElementUtils	注解工具类, 支持注解查询
+
+AnnotationUtils			注解工具类
+
+
+BeanDefinitionRegistryPostProcessor 全局化的BeanFactoryPostProcessor 用于用户自定义修改BeanDefinition
+
+

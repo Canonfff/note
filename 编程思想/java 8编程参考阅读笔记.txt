@@ -1,0 +1,90 @@
+2020-09-08 16:16
+开始进行java 8的编程阅读笔记
+
+感觉最近实在是开发的过程中有点无聊;不过也是,对于我来说,现阶段应该是高速增长知识的一个阶段;需要快点整合知识点吸收;对于java这门语言其实自己还有许多东西不懂,先抛开框架层面去直接面对这门语言,可能会让自己更加理解这门编程语言
+
+
+Fork/join框架
+java在JDK7发布的一款框架,它可以将一个大的任务拆分成多个子任务并行的处理,最后将子任务结果合并处理最后的结果,并进行输出;
+
+
+位运算符
+	~ 按位取反
+	& 按位与
+	| 按位或
+	^ 按位异或
+	>>右移
+	>>>右移零填充
+	<<左移
+
+
+注解
+	所有注解都自动扩展了Annotation接口
+
+2020-09-09 看了之前自己做的JDBC的封装,感觉几个月不看有点看不懂了;不过总体来说,写的还行;不算太垃圾
+
+
+2020-09-10 09:46
+IO模块
+	java程序通过流执行I/O;流是一种抽象,要么产生信息,要么读取信息
+
+	总体来说,就两种流
+		1.字节流
+		2.字符流
+
+lambda表达式
+	1.lambda表达式
+		lambda本质上是一个匿名的方法,但是这个方法不是独立执行,而是用于实现由函数式接口定义的另一个方法,因此lambda表达式会导致产生一个匿名类,lambda通常也被称为闭包
+	2.函数式接口
+		函数式接口是仅包含一个抽象方法的接口,这个方法表明了接口的目标用途,因此函数式接口通常表示单个动作;函数式接口有时候被称为SAM类型(Single Abstract Method)
+
+	操作符 ->
+
+
+java-util包
+	java的工具类
+	StringTokenizer		字符串扫描类
+
+
+	Optional, OptionalDouble, OptionalInt, OptionalLong
+	JDK8 提供了Optional,OptionDouble, OptionInt, OptionalLong类, 处理值可能存在,也可能不存在的场合提供了方法
+
+
+	Observable类
+	JDK提供的观察者类
+
+	Timer和TimerTask类
+
+
+NIO
+
+
+
+Fork/Join
+	Fork/Join框架位于java.util.concurrent包
+	核心类
+		1.ForkJoinTask<V> 用来定义任务的抽象类
+			1.fork() 提交调用任务
+			2.join() 等待方法执行完成,任务结果返回
+			3.invoke() 合并调用fork()和join()方法
+		2.ForkJoinPool 管理ForkJoinTask的执行
+			1.ForkJoinPool() 构造函数
+			2ForkJoinPool(int pLevel) 指定并行级别,值必须大于0,并且不能超过实现的限制,并行级别决定了能够并行执行的线程数量
+		3.RecursiveAction ForkJoinTask<V>的子类,用于不返回值的任务
+		4.RecursiveTask ForkJoinTask<V>的子类,用于返回值的任务
+
+
+
+
+try with resource
+	只要实现了AutoCloseable接口,就可以使用try with resource
+
+
+Spliterator
+	java8新增了一种新的迭代器
+	Spliterator可以支持并行/并发编程,即使不用并发/并行编程,也可以使用Spliterator,因为hasNext和next操作合并到了一个方法中,提高了效率
+
+	tryAdvance方法 如果有下一个元素就返回true,否则返回false
+
+并发包
+	
