@@ -5,3 +5,5 @@
 java8的lambda表达式 ----> 闭包
 
 
+Optional.ofNullable(this.objectFactory).ifPresent(targetConfiguration::setObjectFactory);
+

@@ -553,6 +553,357 @@ Spring整体架构
 			1.如果用户自定义了事件广播器,那么则使用用户自定义的事件广播器
 			2.如果没有,则使用spring默认的ApplicationEventMulticaster
 				并且使用spring的beanFactory将其注册为单例beanFactory.registerSingleton
+			3.作为广播器，一定是用于存放监听器，并在合适的时候调用监听器
+				SimpleApplicationEventMulticaster是spring默认的事件广播器
+					1.multicastEvent 
+						1.如果有可分辨类型，那么直接使用，如果没有可分辨类型，使用event分析出类型
+						2.根据event和类型获取可执行的监听器；
+						3.使用线程池调用监听器
+		
+		注册监听器registerListeners();
+			1.使用硬编码注册
+			2.使用配置文件注册
+
+		初始化非延迟加载单例 finishBeanFactoryInitialization(beanFactory);
+			1.ConveionService的一些设置
+			2.冻结所有bean定义，此时bean不能再被修改
+			3.初始化剩下的单例bean
+
+			ConversionService的作用
+				spring使用的两种转化器：
+					1.Converter
+					2.
+
+			冻结配置freezeConfigurantion()
+				1.冻结所有的bean定义，说明注册的bean将不能被修改或者进一步处理
+
+			初始化非延迟加载
+				1.ApplicationContext的默认行为是将所有的非延迟加载的bean在容器初始化的时候进行实例化
+				2.初始化所有的单例bean之后，还会对触发bean的后置处理，需要实现SmartInitializingSingleton接口
+
+		finishRefresh
+			Spring还提供Lifestyle接口，Lifestyle包含了stop和start方法，实现此接口后Spring会保证在启动的时候调用start方法开始生命周期，并在spring关闭的时候吊桶stop方法结束生命周期
+
+			1.清除资源文件的缓存
+			2.初始化bean的生命周期类LifecycleProcessor，如果用户未自定义，则系统默认初始化一个DefaultLifecycleProcessor
+			3.调用LifecycleProcessor的onRefresh方法
+				1.获取所有的Lifecycle的接口的bean
+				2.循环调用start方法启动
+			4.publishEvent
+				当完成ApplicationContext初始化的时候，要通过spring中的事件发布机制发出ContextRefreshEvent事件，以保证对应的监听器可以做进一步的逻辑处理
+
+	AOP
+		AOP示例：
+			使用@Aspect注解，标注类
+			然后标明切点，@Pointcut()
+			标注是before，after，还是Around
+
+		Spring在xml的情况下是通过<aop:aspectj-aotuproxy/>这个标签进行开始aop代理的
+		这里是在AopNamespaceHandler对应着这样一段函数
+			public void init() {
+				...
+				this.registerBeanDefinitionParser("aspectj-autoproxy", new AspectJAutoProxyBeanDefinitionParser());
+			}
+		这里的意思是，当遇到<aop:aspectj-aotuproxy/>的时候，就会使用解析器AspectJAutoProxyBeanDefinitionParser进行解析
+
+		所有的解析器都是从BeanDefinitionParser接口的统一实现，入口函数都是parser
+			AopNamespaceUtils.registerAspectJAnnotationAutoProxyCreatorIfNecessary(parserContext, element);
+				1.关于aop的实现都是通过AnnotationAwareAspectJAutoProxyCreator去实现的；这里就是注册AnnotationAwareAspectJAutoProxyCreator
+				2.proxy-target-class与expose-proxy 属性设置
+					1.使用哪种ap代理方式，spring支持通过proxy-target-class 属性设置aop代理的生成方式；
+						1.JDK
+						2.CGLIB
+					2.内部调用的时候无法实现增强处理 expose-proxy
+						eg：
+							public class TestBean {
+								public void a() {
+									this.b();
+								}
+								publci void b() {
+
+								}
+							}
+						这种情况无法对b进行切面， 设置<aop:aspectj-autoproxy expose-proxy= "true" />
+						使用这种方式
+							((TestBean)AopContext.currentProxy()).b();
+
+		AnnotationAwareAspectJAutoProxyCreator
+			这个实现了BeanPostProcessor接口
+				postProcessAfterInitialization主要看这个方法
+					1.根据给定的bean的class和name 构建出一个key， 格式: beanClassName_beanName
+					2.如果需要代理wrapIfNecessary
+						1.已经处理过
+						2.不需要代理
+						3.判断给定的类是否是一个基础设施类，如果是基础设施类则不需要代理，判断是否是要指定跳过的类，如果是指定要跳过的类，也不需要代理
+						4.获取增强getAdvicesAndAdvisorsForBean
+							1.findEligibleAdvisors 获取增强列表
+								对于指定bean的增强方法获取一定是包含两个步骤的
+									1.获取所有的增强方法findCandidateAdvisors
+										1.获取所有的增强器buildAspectJAdvisors
+											1.advisorFactory.getAdvisors(factory); 解析标记@AspectJ注解的类的增强方法
+												1.获取标记为AspectJ的类
+												2.获取标记为AspectJ的name
+												3.验证
+												4.getAdvisors获取增强器集合
+													1.getAdvisor普通增强器的获取
+														1.获取切点getPointcut
+															1.获取方法上注解
+																AbstractAspectJAdvisorFactory.findAspectJAnnotationOnMethod(candidateAdviceMethod); ASPECTJ_ANNOTATION_CLASSES 切面主要的类集合
+															2.使用AspectJExpressionPointCut封装获取到的信息
+														2.InstantiationModelAwarePointcutAdvisorImpl() 根据切点生成增强器
+															1.instantiateAdvice 增强器的初始化
+																1.aspectJAdvisorFactory.getAdvice 使用工厂生成增强器
+																	1.根据注解的不同类型生成不同的增强器， 在增强器里面完成方法的增强
+												5.当获取的advices集合不为空的时候，并且配置了延时加载；那么就生成一个
+													SyntheticInstantiationAdvisor
+													这个增强器是同步实例化增强器
+													目的是初始化aspect
+												6.DeclareParents增强器
+													getDeclareParentsAdvisor方法
+													1.判断是否有存在注解了@DeclareParents字段， 判断是否有defaultImpl
+													2.通过构建DeclareParentsAdvisor对象，构建增强器
+										几个常用的增强器
+											1.MethodBeforeAdviceInterceptor 实现了MethodInterceptror接口
+												1.类种含有MethodBeforeAdvice的引用
+												2.上述生成的增强器，如AspectJMethodBeforeAdvice前置增强，就是MethodBeforeAdvice的子类
+												3.MethodBeforeAdviceInterceptor通过调用其invoke方法，执行方法拦截
+
+												before这种调用是通过MethodBeforeAdviceInterceptor持有MethodBeforeAdvice在调用真实的方法之前去调用MethodBeforeAdvice中的before方法，处理方式就是类似于前置的处理方式
+											2.AspectJAfterAdvice
+												1.实现了MethodInterceptor接口
+												2.在invoke方法里面，直接执行方法，然后在finally里面调用after方法
+
+									2.在所有增强方法中找到适用于bean的增强并应用findAdvisorsThatCanApply
+										1.AopUtils.findAdvisorsThatCanApply(candidateAdvisors, beanClass); 得到过滤的增强器
+											1.寻找引介增强器(针对字段的增强器)
+											2.针对普通bean的增强
+							2.如果List为Empty那么就返回null
+						5.如果获取到了增强，则需要针对增强进行代理
+							1.设置缓存里面
+							2.createProxy创建代理对象
+								1.AutoProxyUtils.exposeTargetClass 使用ConfigurableListableBeanFactory修改bean定义
+								2.ProxyFactory创建代理工厂对象， 拷贝当前类对象 当前类是AnnotationAwareAspectJAutoProxyCreator，目的是获取当前类相关属性
+								3.shouldProxyTargetClass(beanClass, beanName) 判断当前类的代理是否应该使用targetClass而不是接口代理
+									1.evaluateProxyInterfaces 检查是否有接口，并且这些接口应该符合规范，即，不包含特殊接口； 必须包含所有的接口
+								4.buildAdvisors(beanName, specificInterceptors);获取增强器， 设置增强器
+									1.resolveInterceptorNames(); 解析注册的所有的interceptorName； 这里注册目前没有看到哪里可以注册，应该时候初始化的时候用户手动注册
+									2.加入到拦截器
+									3.advisorAdapterRegistry.wrap(allInterceptors.get(i)); 将拦截器进行封装转化成advice
+								5.设置目标类
+								6.子类扩展代理工厂
+								7.设置冻结状态
+								8.设置前置过滤，默认是false，子类可重写
+								9.工厂获取代理对象 proxyFactory.getProxy(getProxyClassLoader());
+									1.createAopProxy().getProxy(classLoader); 
+									2.getAopProxyFactory().createAopProxy(this); 创建AopProxy对象； 这里使用了一个工厂模式
+										属性介绍
+										1.optimize用来控制CGLIB创建的代理是否使用激进化的优化策略，除非完全了解AOP代理如何进行优化，否则不推荐用户使用这个设置,这个设置对JDK代理(默认代理)无效
+										2.proxyTargetClass这个属性设置成true；则目标类本身被代理，而不是目标类的接口，如果这个属性被设置成true将采用CGLIB动态代理
+										3.hasNoUserSuppliedProxyInterfaces(config) 是否存在代理类的接口
+							3.返回代理对象
+
+			JDK与CGLIB方式总结：
+				1.如果目标对象实现了接口，那么默认情况下会采用JDK动态代理实现AOP
+				2.如果目标对象实现了接口，可以强制使用CGLIB实现AOP
+				3.如果目标对象没有实现接口，必须采用CGLIB库，Spring会在JDK与CGLIB之间自动切换
+
+			如何强制使用CGLIB实现AOP？
+				1.添加CGLIB库， Spring_HOME/cglib/*.jar
+				2.<aop:aspectj-autoproxy expose-proxy= "true" />
+
+			JDK动态代理与CGLIB字节码生成的代理有什么区别？
+				1.JDK动态代理只能针对实现了接口的类生成代理，而不能针对类
+				2.CGLIB是针对类实现代理，主要是针对目标类生成一个子类；覆盖其中的方法，因为是继承，所以类与方法最好不要声明为final
+
+
+			JdkDynamicAopProxy
+				1.getProxy 获取代理对象
+					1.获取实现的接口数组
+					2.过滤equals和hashCode方法
+					3.Proxy.newProxyInstance(classLoader, proxiedInterfaces, this); 创建代理
+
+				2.invoke方法
+					1.equals方法处理
+					2.hashCode方法处理
+					3.Class类的isAssignableFrom(Class cls) 方法如果调用这个方法class与接口参数cls表示的类或者接口相同，或者cls表示的类或者接口的父类，则返回true
+					4.oldProxy = AopContext.setCurrentProxy(proxy); 目标的内部调用无法实现增强，则可以使用此属性暴露代理
+					5.List<Object> chain = this.advised.getInterceptorsAndDynamicInterceptionAdvice(method, targetClass); 获取此方法的拦截链
+					6.没有拦截链就直接调用
+					7.如果有拦截链，封装成一个ReflectiveMethodInvocation，以便调用使用拦截器； retVal = invocation.proceed(); 调用
+						1.执行完所有增强后执行切点方法
+						2.获取下一个要执行的拦截器
+						3.动态匹配
+						4.不匹配则不执行
+						5.普通拦截器，将this作为参数，以确保在当前实例中调用链的执行
+
+					8.返回结果
+
+			CGLIB动态代理，暂时不管了
+
+
+
+	JDBC
+		springJdbc 这个可以不看，之前看过源码
+
+
+		mybatis 看过部分源码，重新整理
+		2020-11-26 11:07 继续看源码
+
+		mybatis配置文件基本结构
+			1.configuration 根元素
+			2.properties 定义配置外在化
+			3.settings 一些全局配置
+			4.typeAliases 类型别名
+			5.typeHandler 定义类型处理， 也就是java类型与数据库中类型的转化
+			6.objectFactory 用于指定结果集对象的实例是如何创建的
+			7.plugins mybatis插件， 插件可修改mybatis内部的运行逻辑
+			8.environments mybatis运行环境
+			9.transactionManager 事务管理器
+			10.dataSource 数据源
+			11.mappers 指定映射文件或者映射类
+
+		spring整合mybatis 
+			通过对配置文件的读取，是通过SqlSessionFactoryBean封装了对mybatis的实现
+
+			SqlSessionFactoryBean 实现了FactoryBean 与 InitializingBean 
+				1.InitializingBean 实现了这个接口会在初始化的调用其afterPropertySet方法
+				2.FactoryBean 一旦某个bean实现该接口，那么通过getBean方法获取的bean时，其实是获取此类的getObject() 返回的实例
+
+				1.afterPropertySet 
+					1.校验基本属性
+					2.buildSqlSessionFactory() 构建SqlSessionFactory
+
+				2.getObject 返回SqlSessionFactory实例
+
+			MapperFactoryBean的创建
+				为了使用mybatis的功能，spring配置文件提供两个bean
+					1.SqlSessionFactoryBean 此bean是为了配置mybatis
+					2.MapperFactoryBean 此bean注册mapper，访问数据库
+
+				MapperFactoryBean同样实现了FactoryBean与InitializingBean接口
+					1.afterPropertySet 初始化
+						1.checkDaoConfig 检查配置
+							1.检查sqlSessionTamplate 是否存在
+							2.检查mapperInterface 是否存在
+							3.addToConfig 是否能添加Mapper接口，并且接口没有注册过
+						2.initDao(); 初始化Dao， 模板方法，留给子类扩展
+
+					2.getObject 返回SqlSession的Mapper代理类
+
+
+				SqlSessionTempalte 实现了SqlSession接口， SqlSession作为根据接口创建映射器代理的接触类一定不可以空，而SqlSession的初始化工作是在设定其设定其SqlSessionFactory属性的时候完成的
+
+					1.setSqlSessionFactory 设置SqlSessionFactory， 如果SqlSessionTemplate为空，或者不等SqlSessionTemplate的SqlSessionFactroy就重新创建一个SqlSessionTemplate
+						1.createSqlSessionTemplate 创建SqlSessionTemplate
+
+				在mybatis中并没有调用configuration.addMapper方法，而是在映射文件读取过程中一旦解析到<mapper namespace="Mapper.UserMapper">，便会自动进行类型映射，而在spring中，单独拿出这个功能来验证；如果你保证这个接口一定存在映射文件，那么这个验证没有存在的必要，但是这里是我们自行决定的配置，无法保证这里配置的接口一定存在映射文件
+
+					这里的自行配置是指的在配置SqlSessionFactory的时候，我们可以自动配置，而不用依赖于Xml
+
+
+
+				Configuration.addMapper 这里是mybatis将Mapper文件和接口映射起来主要步骤
+					这里的代码是mybaitis的逻辑
+					1.mapperRegistry.addMapper(type);
+						MapperRegistry 是mybatis注册Mapper接口的类
+							1.判断是否是接口
+							2.是否已经注册过这个mapper接口
+							3.将mapper接口作为key，MapperProxyFactory作为value 存放到knownMappers； 此mapper是存放接口代理类的map对象
+								1.MapperProxyFactory 存放着接口的class对象
+									1.MapperProxy 实现了InvocationHandler， 在JDK动态代理的时候，调用其invoke方法
+
+						MapperAnnotationBuilder mapper的注解解析建造者
+							1.传入mapper接口与configuration
+							2.parser.parse();解析
+								1.验证是否已经加载资源文件
+									1.loadXmlResource(); 加载xml资源文件
+									2.加载资源文件
+									3.设置当前命名空间名称
+									4.解析缓存
+									5.解析CacheNamespaceRef 命名空间缓存， 此处应该是mybatis的二级缓存
+									6.获取mapper接口的所有方法
+									7.判断，如果不是桥方法(bridge method， 此处在之前spring的解析中提到过) 就解析method生成statement
+									8.parseStatement(method); 解析生成statement并且添加到configuration里面
+										1.getParameterType获取方法的参数类型， 如果有超过一个，那么就指定是map类型
+										2.获取数据库方言，使用@Lang 注解
+										3.从方法注解上获取sql资源对象
+											1.判断method上是否有@Select，@Update， @Delete，@Insert 注解
+											2.判断method上是否有@SelectProvider 等注解
+											3.buildSqlSourceFromStrings(strings, parameterType, languageDriver);获取@Select 等注解的value，生成资源文件
+												1.拼接sql 
+												2.languageDriver.createSqlSource(configuration, sql.toString().trim(), parameterTypeClass); 生成资源文件
+													1.如果是<script>开头，那么就是xml的解析
+													2.否则就构建一个GenericTokenParser 解析对象去解析SQL语句
+											4.new ProviderSqlSource(assistant.getConfiguration(), sqlProviderAnnotation, type, method);创建一个资源对象SqlResource
+										4.assistant.addMappedStatement添加mapperStatement； MapperBuilderAssistant 
+											1.判断id是否在此命名空间已经存在？
+											2.MappedStatement.Builder 初始化建造者
+											3.statementParameterMap构建parameter的对象
+											4.如果有参数，那么就将参数设置到建造者中
+											5.调用build方法校验
+											6.添加到configuration的mapperStateMent里面
+
+											题外话，MD，真的瞎；连静态内部类的实例化都没有看到，这里成员变量的实例化，其实是需要静态内部类的实例化，其实和外部类没有毛的区别
+
+
+				这里终于看到了mybtais使用Proxy类，使用的是JDK的动态代理；果然，一段代码看个几十遍还是有用的
+
+			MapperScannerConfigurer
+				MapperScannerConfiggurer 是Spring通过扫描特定包的，自动生成映射器的类 
+				实现接口
+					1.BeanDefinitionRegistryPostProcessor
+						1.postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) BeanDefinition的注册信息
+						2.postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) 这个方法来自BeanFactoryPostProcessor 这个类可以修改Spring的上下文对象， 此时所有的beanDefinitions也就是bean定义已经加载，但是bean还没有实例化，这里允许覆盖或者添加一些属性在bean初始化的时候使用
+					2.ApplicationContextAware
+						setApplicationContext(ApplicationContext applicationContext) 设置上下文对象
+					3.InitializingBean
+						afterPropertySet 初始化设置属性
+
+				postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) MapperScannerConfigurer
+					1.processPropertyPlaceHolders 
+						processPropertyPlaceHolders()
+							1.BeanDefinitionRegistries 在启动的时候应用，其优先级早于BeanFactoryPostProcessors；这意味PropertyResourceConfigurers加载不了属性，类对属性的引用会失效；因此，需要手动的找到定义的PropertyResourceConfigurers并且提前调用，以保证对属性的引用可以正常工作
+							2.获取PropertyResourceConfigurer属性加载控制器
+							3.获取当前对象MapperScannerConfigurer的bean定义；
+							4.构建一个DefaultListableBeanFactory，将当前类MapperScannerConfigurer的BeanDefinition设置进去
+							5.让获取到的PropertyResourceConfigGurers重新为Bean定义设置值
+							6.刷新basePackage， sqlSessionFactoryBeanName， sqlSessionTemplateBeanName的值
+					2.构建ClassPathMapperScanner对象并设置属性值
+						1.这里有很多属性，但对结果影响的并不多；所以Spring在这里会给特殊属性设置一个过滤器registerFilters()
+							1.annocationClass属性处理，如果不为空，那么只接受标注了该注解的的接口
+							2.markerInterface 只接受实现了该接口的接口
+							3.acceptAllInterface 如果annotationClass和markerInterface任一属性有值，acceptAllinterface就会改变，否则就会设置一个TypeFilter接口的局部类，旨在接受所有接口文件
+							4.package-info.java处理， 对于命名为package-info的java文件，默认不作为逻辑接口实现，将其排除掉，使用TypeFilter接口的局部类实现match方法
+
+						2.设置了相关属性，以及对应过滤器，便可以开始扫描文件了，对应的逻辑是在scan方法里面
+							1.统计需要扫描文件的数量
+							2.扫描的动作交给了doScan方法去做
+								1.调用父类的doScan方法
+									1.findCandidateComponents(String basePackage)扫描basePackage下的java文件
+										1.isCandidateComponent(metadataReader) 判断当前文件是否符合要求
+											1.是否是排除的资源
+											2.资源是否符合要求
+										2.将资源包装成ScannedGenericBeanDefinition
+									2.解析scope属性
+									3.判断是否AnnotatedBeanDefinition, 如果是需要检测一下常用的类型,如Lazy, Primary等
+									4.检查bean是否有注册
+									5.如果bean是用于代理生成的代理bean,需要进一步处理
+								2.processBeanDefinitions(Set<BeanDefinitionHolder> beanDefinitions) 对bean进行处理
+							3.includeAnnotationConfig属性的处理,AnnotationConfigUtils.registerAnnotationConfigProcessor主要是完成注解处理器的简单处理 如,AutoWiredAnnotationBeanProcessor, RequiredAnnotationBeanProcessor
+
+
+    事务
+    	
+
+
+
+
+
+
+
+
+
+
 
 			
 
