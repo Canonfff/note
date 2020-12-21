@@ -15,3 +15,5 @@ BeanDefinitionRegistryPostProcessor 全局化的BeanFactoryPostProcessor 用于�
 ReflectionUtils  反射工具类
 
 AspectJProxyUtils proxy代理工具类
+
+BeanFactoryUtils beanFactory工具类

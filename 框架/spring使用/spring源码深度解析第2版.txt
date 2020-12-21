@@ -893,12 +893,217 @@ Spring整体架构
 
 
     事务
-    	
+    	开启事务的标签是<tx: annotation-driven transaction-manager="transactionManager"/>
+    	需要指定一个事务管理器
+
+    	spring是在xml解析该标签指定事务管理器
+
+    	解析的动作在TxNamespaceHandler的init方法里面
+    	@Override
+		public void init() {
+			registerBeanDefinitionParser("advice", new TxAdviceBeanDefinitionParser());
+			registerBeanDefinitionParser("annotation-driven", new AnnotationDrivenBeanDefinitionParser());
+			registerBeanDefinitionParser("jta-transaction-manager", new JtaTransactionManagerBeanDefinitionParser());
+		}
+
+		spring在解析标签的时候会通过AnnotationDrivenBeanDefinitionParser类的parse方法进行解析
+
+		AnnotationDrivenBeanDefinitionParser
+			1.parse
+				首先会解析是否存在model属性，model属性指定事务切入的方式，可以指定为AspectJ方式，也可以指定为proxy(默认)
+			2.AopAutoProxyConfigurer.configureAutoProxyCreator(element, parserContext);
+				AopNamespaceUtils.registerAutoProxyCreatorIfNecessary(parserContext, element);
+					BeanDefinition beanDefinition = AopConfigUtils.registerAutoProxyCreatorIfNecessary(
+						parserContext.getRegistry(), parserContext.extractSource(sourceElement));
+					以上两个方法的目的都是为了注册InfrastructureAdvisorAutoProxyCreator
 
 
+				默认的方式
+				1.创建TransactionAttributeSource的bean
+				2.parserContext.getReaderContext().registerWithGeneratedName(sourceDef);并使用spring的定义的规则生成beanName
+				3.创建TransactionInterceptor的bean
+				4.registerTransactionManager(element, interceptorDef);注册事务管理者
+				5.创建BeanFactoryTransactionAttributeSourceAdvior的bean
+				6.如果配置了order属性，那么就加入到bean中
+				7.创建compositeComponentDefinition
+				8.添加以上创建的3个bean，parserContext.registerComponent(compositeDef);注册compositeComponentDefinition
 
 
+				以上注册的三个bean
+					1.TransactionAttributeSource
+					2.TransactionInterceptor
+					3.BeanFactoryTransactionAttributeDefinition
+				支撑了spring的事务功能
+					其中TransactionAttributeSource与TransactionInterceptor被注册到了BeanFactoryTransactionAttributeDefinition里面
 
+		InfrastructureAdvisorAutoProxyCreator 
+			类结构分析
+				1.实现了SmartInstantiationAwareBeanProcessor
+				2.实现了BeanFactory接口
+
+			2020-11-30 继续看代码感觉身体被掏空，想想之前也是傻；总觉得时间很多；一心想写代码，觉得读源码是一件很无聊的事情；不愿意下苦功夫读源码，不过后来想想，读源码确实没有自己写出好看代码那种满足感来的强烈；不过，读的源码越多，越来越觉得，自己应该可以做的更加好一些；自己可以尝试一些不同的东西；另外，spring牛逼！！！
+
+			也就是说，spring在实例化InfrastructureAdvisorAutoproxyCreator的时候，会保证调用其postAfterInitialization方法
+				postProcessAfterInitialization
+					1.添加缓存， 根据bean和class构建出个key==> beanClassName_beanName
+					2.wrapIfNecessary是否是由于避免循环依赖而创建的bean代理
+						1.判断是否已经处理过这个bean
+						2.判断此bean是否是基础bean，是否是指定跳过的bean
+						3.getAdvicesAndAdvisorsForBean(bean.getClass(), beanName, null);获取bean的增强器
+							1.findEligibleAdvisors(beanClass, beanName); 获取当前bean的增强器
+								1.findCandidateAdvisors();获取所有的增强器
+									1.从BeanFactoryAdvisorRetireValHelper.findAdvisorBeans() 找到当前beanFactory中或有符合要求的Advisor Bean忽略FactoryBeans和正在创建的bean
+										1.使用beanFactory获取Advisor的beanNames
+										2.使用beanFactory获取Advisor的bean
+								2.findAdvisorsThatCanApply(candidateAdvisors, beanClass, beanName); 获取当前bean的增强器
+									1.AopUtils.findAdvisorsThatCanApply(candidateAdvisors, beanClass); 寻找当前类的增强器
+										1.canApply(candidate, clazz, hasIntroductions) 匹配
+											1.canApply(pca.getPointcut(), targetClass, hasIntroductions); 通过切点匹配
+												1.methodMatcher.matches(method, targetClass) 匹配逻辑，这里进入TransactionAttributeSourcePointcut
+													1.tas.getTransactionAttribute(method, targetClass) TransactionAttributeSource这里指的是AnnotationTransactionAttributeSource
+														1.TransactionAttribute txAttr = computeTransactionAttribute(method, targetClass); 获取事务注解标签
+															1.txAttr = findTransactionAttribute(specificMethod.getDeclaringClass());尝试在当前类里面寻找事务注解
+																1.determineTransactionAttribute(clazz); 寻找事务注解
+																	1.annotationParser.parseTransactionAnnotation(element); 调用parser解析注解Element，这里的parser是SpringTransactionAnnotationParser
+						4.添加到缓存，创建代理返回
+
+				创建事务增强器的逻辑:
+					1.找出某个增强器是否适合于对应的类，而是否匹配的关键在于是否从指定的类或者类的方法中找到对应的事务属性
+					2.当判断某个bean适用于事务增强时，也就是适用于增强器BeanFactoryTransactionAttributeSourceAdvisor，在解析自定义标签的时候，注入的类成为了整个事务功能的基础
+					3.BeanFactoryTransactionAttributeSourceAdvisor是Advisor的实现类，自然要遵从Advisor的处理方式，当代理bean被调用的时候，会调用这个类的增强方法，也就是此bean的Advise,又因为在解析事务定义标签的时候，我们将TransactionInterceptor类型的bean注入到了BeanFactoryTransactionAttributeSourceAdvisor中，所以在调用事务增强器增强的代理类时会首先执行TransactionInterceptor进行增强，同时，也就是在TransactionInterceptor类中的invoke方法中完成整个事务的逻辑
+
+		TransactionInterceptor
+			事务拦截器，此类实现了MethodInterceptor,所以分析此类要从invoke方法开始
+			invoke(MethodInvocation invocation)
+				1.获取targetClass
+				2.invokeWithinTransaction(invocation.getMethod(), targetClass, invocation::proceed);
+					1.获取事务属性
+					2.determineTransactionManager(txAttr);获取事务管理器
+					3.methodIdentification(method, targetClass, txAttr); 获取构造方法唯一标识
+					4.声明式事务处理
+						1.createTransactionIfNecessary(tm, txAttr, joinpointIdentification); 创建TransactionInfo
+						2.invocation.proceedWithInvocation(); 执行被增强的方法
+						3.completeTransactionAfterThrowing(txInfo, ex); 回滚
+						4.cleanupTransactionInfo(txInfo); 清除消息
+						5.commitTransactionAfterReturning(txInfo); 提交事务
+					5.编程式事务处理
+						使用了CallBackPerferringPlatformTransactionManager的execute方法
+						1.prepareTransactionInfo(tm, txAttr, joinpointIdentification, status); 创建TransactionInfo
+						2.invocation.proceedWithInvocation(); 执行被增强的方法
+						3.txAttr.rollbackOn(ex) 回滚
+						4.cleanupTransactionInfo(txInfo); 清除消息
+
+			声明事务处理的主要步骤：
+				1.获取事务属性
+					对于事务来说，最基础或者最首要的功能便是获取事务属性，这是支撑整个事务功能的基石，如果没有事务属性，其它功能也就无从谈起；在分析事务准备阶段时我们已经分析了事务属性的提取功能
+				2.加载配置种的配置TransactionManager
+				3.不同的事务处理方式使用不同的逻辑
+					对于声明式事务和编程式事务的处理，第一点区别在于事务属性上，因为编程式事务的事务处理是不需要事务属性的，第二点区别就是在TransactionManager上，CallBackPerferringPlatformTransactionManager实现了PlatformTransactionManager接口，暴露出一个方法用于执行事务处理的回调，所以，这两种方式都可以用作事务处理方式的判断
+				4.在目标方法执行前获取事务并收集事务信息
+					事务信息与事务属性并不相同，也就是TransactionInfo和TransactionAttribute不相同，TransactionInfo包含了TransactionAttribute的信息，但是除了TransactionAttribute的信息除外，还有其它事务信息，例如：PlatformTransactionManager和TransactionStatus的相关信息
+				5.执行目标方法
+				6.一旦出现异常，尝试异常处理
+					并不是所有异常，spring都会将其回滚，默认只会对RuntimeException进行处理
+				7.提交事务前的事务信息清除
+				8.提交事务
+
+
+				1.createTransactionIfNecessary(tm, txAttr, joinpointIdentification); 创建事务
+					1.如果没有名称指定则使用方法唯一标识，并使用DelegatingTransactionAttribute封装txAttr
+					2.tm.getTransaction(txAttr); 获取transactionStatus
+					3.prepareTransactionInfo(tm, txAttr, joinpointIdentification, status);根据指定的属性和status准备一个TransactionInfo
+
+					对于createTransactionIfNecessary函数主要做了这样几件事情
+						1.使用DelegatingTransactionAttribute封装传入的TransactionAttribute实例，对于传入的TransactionAttribute参数txAttr，当前实例是RuleBasedTransactionAttribute，是由获取事务属性时生成，主要用于数据承载，而这里之所以使用DelegatingTransactionAttribute进行封装，当然时提供了更多的功能
+						2.获取事务
+							事务处理当然以事务为核心，那么获取事务就是最重要的事情
+						3.构建事务信息
+							根据之前几个步骤获取的信息构建TransactionInfo返回
+				2.tm.getTransaction(txAttr); 获取事务
+					1.doGetTransaction()
+						这里使用的DataSourceTransactionManager创建事务的实例
+						1.创建DataSourceTransactionObject
+						2.TransactionSynchronizationManager.getResource(obtainDataSource());如果当前线程已经记录数据库连接则使用原有连接
+						3.txObject.setConnectionHolder(conHolder, false); false表示非新建连接
+					2.isExistingTransaction(transaction)判断当前线程里面是否存在事务，判断依据是为当前线程记录的连接数不为空且连接中
+					3.handleExistingTransaction(definition, transaction, debugEnabled); 处理当前线程已经存在事务的情况
+					4.事务超时验证
+					5.如果当前线程不存在事务，但是definition.getPropagationBehavior()被声明为TransactionDefinition.PROPAGATION_MANDATORY抛出异常
+					6.suspend(null); 空挂起
+					7.newTransactionStatus(
+						definition, transaction, true, newSynchronization, debugEnabled, suspendedResources);构建TransactionStatus
+					8.doBegin(transaction, definition); 构建transaction，包括ConnectionHolder，隔离级别，timout，如果是新链接，绑定到当前线程
+					9.prepareSynchronization(status, definition); 新同步事务的设置，针对于当前线程的设置
+
+					1.获取事务
+					2.如果当前线程存在事务，则转向嵌套事务的处理
+					3.事务超时设置验证
+					4.事务属性propagationBehavior属性的设置验证
+					5.构建DefaultTransactionStatus
+					6.完善transaction，包括设置ConnectionHolder，隔离级别，timeout，如果是新连接，则绑定到当前线程
+						对于一些隔离级别，timeout等功能的设置并不是由spring来完成的，而是委托给底层的数据库连接去做的，而对于数据库连接的设置在doBegin函数中处理
+
+				3.doBegin(transaction, definition); 开始事务
+					1.构造DataSourceTransactionObject，设置connectHolder，timeout，隔离级别； 如果是新事务，则绑定到当前线程
+					2.DataSourceUtils.prepareConnectionForTransaction(con, definition); 获取数据库隔离级别
+					3.更改自动提交，txObject.setMustRestoreAutoCommit(true);con.setAutoCommit(false);
+					4.prepareTransactionalConnection(con, definition); 如果是只读，设置只读事务
+					5.txObject.getConnectionHolder().setTransactionActive(true); 设置当前线程是否存在事务的依据
+					6.TransactionSynchronizationManager.bindResource(obtainDataSource(), txObject.getConnectionHolder()); 获取到的连接绑定到当前线程
+
+					从这个函数开始，已经开始尝试对数据库的获取，当然，对于数据库的获取；一些必要的设置也是需要同步设置的
+					1.尝试获取连接，
+						当然不是每次都会获取新的连接，如果当前线程中的connectionHolder已经存在，则没有必要重新获取，或者，对于事务同步标识设置成true的则需要重新获取连接
+					2.设置隔离级别与只读标识
+					3.更改默认的提交设置
+						如果事务时自动提交，那么需要改变这种设置；将提交事务的权力转移到spring手上进行处理
+						con.setAutoCommit(false); jdbc开启事务
+					4.设置标识位，标识当前线程的事务已经激活
+					5.设置过期时间
+					6.将connectionHolder绑定到当前线程
+
+				4.prepareSynchronization(status, definition); 将事务信息记录到当前线程中
+
+				5.handleExistingTransaction(definition, transaction, debugEnabled); 处理已经存在的事务
+					PROPAGATION_REQUIRED–支持当前事务，如果当前没有事务，就新建一个事务。这是最常见的选择。 
+					PROPAGATION_SUPPORTS–支持当前事务，如果当前没有事务，就以非事务方式执行。 
+					PROPAGATION_MANDATORY–支持当前事务，如果当前没有事务，就抛出异常。 
+					PROPAGATION_REQUIRES_NEW–新建事务，如果当前存在事务，把当前事务挂起。 
+					PROPAGATION_NOT_SUPPORTED–以非事务方式执行操作，如果当前存在事务，就把当前事务挂起。 
+					PROPAGATION_NEVER–以非事务方式执行，如果当前存在事务，则抛出异常
+					PROPAGATION_NESTED-嵌套事务
+
+					1.SuspendedResourcesHolder suspendedResources = suspend(transaction); 新事务的建立
+					2.useSavepointForNestedTransaction() 设置保存点
+					3.如果不能设置保存点，则新建事务
+
+					事务的处理过程中，对于已经存在的事务处理考虑两种情况
+						1.PROPAGATION_REQUIRES_NEW
+							表示当前事务必须在自己的事务里运行，如果有一个事务正在运行，则在这个方法期间被挂起，而spring中对于此种传播方式的处理与新事务建立最大的不同点在于使用suspend方法将原事务挂起；将此信息挂起的目的是为了在当前事务执行完毕之后将原来的事务还原
+						2.PROPAGATION_NESTED
+							表示当前如果有一个事务正在运行中，则该方法应该运行在一个嵌套的事务中，被嵌套的事务可以独立的封装事务进行提交或者回滚；如果封装事务不存在，行为就像PROPAGATION_REQUIRES_NEW，对于嵌套式事务处理，spring主要考虑了两种方式；
+								1.spring允许嵌套事务的时候，首选设置保存点的方式作为异常处理的回滚
+								2.对于其它方式，spring，比如JTA无法使用保存点，那么处理的方式和PROPAGATION_REQUIRES_NEW相同，一旦出现异常；则由spring的事务异常处理机制去完成后续操作
+
+						嵌套事务与新事务有什么不同？
+							使用嵌套事务前提条件
+								1.设置transactionManager的nestedTransactionAllowed为true，默认是false
+								2.java.sql.Savepoint必须在jdk1.4+
+								3.Connection.getMetaData().supportsSavepoints()必须为true ,即jdbc drive必须支持JDBC3.0
+
+						PROPAGATION_REQUIRES_NEW
+							如果当前执行环境存在事务，挂起当前事务，重新建立打开新事务，当前事务和新建事务直接相互不产生影响，比如正在工作来了个普通推销电话，放下手头的事情接过电话（挂起当前事务），继续完成未完成的工作（恢复当前事务）
+
+						PROPAGATION_NESTED 
+							它是已经存在事务的一个真正的子事务. 潜套事务开始执行时,  它将取得一个 savepoint. 如果这个嵌套事务失败, 我们将回滚到此 savepoint. 潜套事务是外部事务的一部分, 只有外部事务结束后它才会被提交或回滚.
+							也就是外部事务提交子事务才能commit，外部事务回滚子事务也回滚
+							如果内部事务回滚将不影响外部事务，内部事务回滚时只回滚到savepoint，当然内部事务可以通过回滚手动抛出异常影响外部事务（业务需求而定），当然有很多种组合
+
+				6.suspend(transaction); 挂起事务
+					1.检查事务是否是活跃状态
+					2.
+
+				
 
 
 
