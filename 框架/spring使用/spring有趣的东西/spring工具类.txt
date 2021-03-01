@@ -1,6 +1,7 @@
 spring框架本身一些很好用的工具类
 
 ClassUtils		class工具类
+	ClassUtils.getDefaultClassLoader()
 
 MethodIntrospector	method工具类 支持class筛选method,method过滤等操作,可自定义
 
@@ -17,3 +18,5 @@ ReflectionUtils  反射工具类
 AspectJProxyUtils proxy代理工具类
 
 BeanFactoryUtils beanFactory工具类
+
+PropertyAccessorFactory spring属性设置工具类

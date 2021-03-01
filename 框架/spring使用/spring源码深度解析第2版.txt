@@ -1270,17 +1270,342 @@ Spring整体架构
 					当web应用被终止的时候，servlet容器会先调用servlet对象的desctory方法，
 
 
+		2021-01-12 15:33 还是继续来看看代码吧;还是代码有意思一些; 自己按照想法写了一套切合spring的定时任务调度方式,但是说实话;我觉得可以进步的空间还是挺大的;主要是自己写的也不太好;跟其它模块;感觉心跳的不是很正常,最近两天心跳的都有点问题,找个时间好好休息一下吧;过了今明两天就好好休息一下;话说,有那么一丢丢的累
+
+		2021-02-01 11:04 之前心跳的问题去医院检查了一下;医生说没有问题,但是还是自己觉得有点痛; 定时任务的抽取全部写完了;其实写的还是不错了;我终于知道那些大佬为什么写代码可以一直写下去,都不用调试;我自己在写的时候也有这种感觉,其实在前期已经将所有的代码都构思好了,到了写代码的时候,只是将想法使用代码语言勾勒出来而已,所以这样的效率特别高,而且需要调试的地方很少;继续看代码吧;还有一点点知识;把这部分看完
+
+			DispatcherServlet的初始化过程
+				Servlet在初始化的时候会调用init方法
+
+				DispatcherServlet的父类 HttpServletBean 重写了init方法; 
+					1.解析init-param 并封装至pvs中
+					2.通过BeanWrapper PropertyAccessorFactory.forBeanPropertyAccess(this); 的方式进行属性设置
+					3.initBeanWrapper(bw); 允许子类此方法修改BeanWrapper的custom editors
+					4.initServletBean(); 留给子类实现
+
+				FrameworkServlet 重写了父类HttpServletBean的initServletBean方法
+					1.initWebApplicationContext(); 寻找WebApplicationContext, 如果没有那么就创建一个
+						之前在ContextLoaderListener已经初始化了WebApplicationContext了,这里的方法是对WebApplicationContext进一步补充
+						initWebApplicationContext的作用就是创建或者刷新WebApplicationContext实例,并对servlet功能所使用的变量进行初始化
+							1.通过构造函数注入初始化
+								为什么webApplicationContext能够通过 this.webApplicationContext != null 判断是否通过构造函数进行初始化, 因为initServletBean是在servlet的init方法中调用的,init方法只会在servlet的生命周期里面调用一次;
+							2.通过contextAttribute进行初始化
+								通过在web.xml文件中配置的servlet参数contextAttribute来查找ServletContext中对应的属性,默认为WebApplicationContext.class.getName + ".ROOT"
+							3.如果以上两种方法都没有办法找到WebApplicationContext就只能重新创建WebApplicationContext
+
+						无论是重新创建还是构造函数都会调用configureAndRefreshWebApplicationContext(cwac);
+							1.设置contextId
+							2.设置servletContext
+							3.设置servletConfig
+							4.刷新WebApplicationContext上下文
+
+						onRefresh(wac); 是frameworkServlet提供的模板方法,在其子类DispatcherServlet中进行了重写,主要用于刷新Spring在web功能实现中所必须使用的全局变量
+
+						initStrategies(context); 初始化策略
+							1.initMultipartResolver(context); 初始化文件上传组件
+							2.initLocaleResolver(context); 初始化国际化组件
+							3.initThemeResolver(context); 初始化主题组件
+							4.initHandlerMappings(context); 初始化处理器映射器
+							5.initHandlerAdapters(context); 初始化处理器适配器
+							6.initHandlerExceptionResolvers(context); 初始化异常处理组件
+							7.initRequestToViewNameTranslator(context); 初始化视图名称转换器组件 
+							8.initViewResolvers(context); 初始化视图组件
+							9.initFlashMapManager(context); 初始化FlashMapManager, flashMap 可以通过RequestContextUtils获取
+
+					2.initFrameworkServlet(); 留给子类实现
+
+			DispatcherServlet的逻辑处理,
+				HttpServlet类中,分别提供了相应的服务方法,它会根据不同请求,将程序引导至对应的函数处理,简单来说,就是所有的请求都引导至了processRequest方法里面
+					1.buildLocaleContext(request); 初始化LocaleContext
+					2.buildRequestAttributes(request, response, previousAttributes); 初始化ServletRequestAttributes
+					3.将方法引导至doService
+						1.前置设置一些请求所需值
+						2.将方法引导至doDispatch
+					4.重置请求上下文
+					5.发布事件, 远程请求接口
+
+				doDispatch springmvc核心处理逻辑
+					1.如果是文件上传类型的请求,将request转成MultipartHttpServletRequest
+					2.getHandler(processedRequest);根据request信息获取对应的handler
+					3.noHandlerFound(processedRequest, response); 如果没有找到对应的handler则通过response响应请求
+					4.根据当前的handler找到对应的HandlerAdapter
+					5.如果当前handler支持last-modified头处理
+					6.!mappedHandler.applyPreHandle(processedRequest, response) 拦截器处理
+					7.mv = ha.handle(processedRequest, response, mappedHandler.getHandler()); 执行handler逻辑, 即业务层逻辑
+					8.applyDefaultViewName(processedRequest, mv); 设置视图名称
+					9.mappedHandler.applyPostHandle(processedRequest, response, mv);拦截器后置调用
+					10.processDispatchResult(processedRequest, response, mappedHandler, mv, dispatchException);处理返回值
 
 
 
+				SpringMVC对缓存的处理,
+					last-modified缓存机制;
+						1.在客户端第一次请求的时候返回200的时候,同时会添加一个"Last-modified"的响应头;标识此文件在服务器的最后更新时间
+						2.客户端第二次请求此URL的时候,客户端会向服务器发送请求头"If-Modified-Since: 时间戳", 如果服务端没有变化,那么自动返回304的状态码(只要响应头, 内容为空, 这样就节省网络带宽)
+
+					实现LastModified接口
+
+		远程服务:
+			java远程方法调用, 即java RMI(Java Remote Method Invocation), 是java编程语言里一种用于实现远程过程调用的应用程序编程接口.它使客户机上运行的程序可以调用远程服务器上的对象;远程方法调用特性使java编程人员能够在网络环境中分布操作,RMI全部的宗旨就是尽可能地简化远程接口对象的使用.
+			RMI 极大的依赖于接口,在需要创建一个远程对象时,程序员通过传递一个接口来隐藏底层的实现细节.客户端得到的远程对象句柄正好与本地的根代码连接,由后者负责透过网络通信,这样一来,程序员只需要关心如何通过自己的接口句柄发送消息
+
+			spring整合RMI
+				spring整合RMI的过程;
 				
+				建立服务端:
+					服务端类
+						DemoService
+						DemoServiceImpl
+
+
+					核心类
+						RmiServiceExporter 实现了InitializingBean, DisposableBean, BeanClassLoaderAware
+
+						先看初始化的方法afterPropertiesSet, 调用了prepare方法
+							1.验证service
+							2.如果clientSocketFactory 实现了 RMIServerSocketFactory, 那么就会忽略配置的serviceSocketFactory而使用clientSocketFactory
+							3.clientSocketFactory与serviceSocketFactory要么同时出现,要么同时不出现
+							4.如果registerClientSocketFactory 实现了 RMIServerSocketFactory,那么就会忽略配置的registerServiceSocketFactory
+							5.确认RMI registry
+							6.初始化以及缓存导出的Object, 此时通常情况下是使用的RMIInvocationWrapper封装的JDK代理类,切面为RemoteInvocationTraceInterceptor
+							7.使用由给定的套接字工厂指定的传送方式导出远程对象;以便能够接收传入的调用
+							8.绑定服务到remote object, 外界调用serviceName的时候会被exportedObject接收
+
+
+						getRegistry方法
+							spring获取Registry实例考虑到多种情况,
+								1.远程获取 LocateRegistry.getRegistry(registryHost, registryPort, clientSocketFactory)
+								2.直接创建 LocateRegistry.createRegistry(registryPort, clientSocketFactory, serverSocketFactory);
+
+						getObjectToExport(); 初始化将要导出的实体对象
+							当请求某个RMI的时候,RMI会根据注册的服务名称,将请求引导至远程对象处理类中,这个类便是使用getObjectToExport进行创建
+							请求处理类的初始化主要处理规则为: 
+								如果配置的service属性对应的类,实现了Remote接口而且没有配置serviceInterface属性,那么直接使用service作为处理类;否则,使用RMIInvocationWrapper对service的代理类和当前类也就是RMIServiceExporter进行封装
+							经过这样的封装,客户端与服务端便达成一致协议,当客户端检测到RMIInvocationWrapper类型的stub的时候便会直接调用其invoke方法,使得调用端与服务端很好地连接在一起;
+							RMIInvocationWrapper将service使用代理的方式将其调用,这里使用代理的原因是,因为方便扩展,以及代码不致于过于耦合
+							其中在为其创建代理的时候,添加了一个增强拦截器
+								RemoteInvocationTraceInterceptor
+
+				客户端建立:
+					客户端类:
+						DemoInterface
+
+					核心类:
+						RMIProxyFactoryBean 实现了InitializingBean, FactoryBean, MethodInterceptor
+
+						先看初始化方法afterPropertiesSet,
+							1.父类UrlBasedRemoteAccessor,检查serviceUrl是否有设置
+							2.RmiClientInterceptor.prepare()
+								1.如果配置了lookupOnStartup, 那么就会在启动的时候自动去寻找stub
+								2.lookupStub()
+									获取stub是RMI的重要步骤,可以使用两种方式进行获取
+										1.使用自定义的套接字工厂,如果使用这种方式,你需要在构造Registry实例的将自定义的套接字工厂传入,并使用Registry中提供的lookup方法来获取对应的stub
+										2.直接使用RMI提供的标准方法: Naming.lookup(getServiceUrl())
+							3.RmiProxyFactoryBean 根据service创建动态代理
+
+
+						使用增强器进行远程连接
+							RMIProxyFactoryBean的bean的初始化中完成的逻辑,在初始化的时候创建了代理的并将本身作为增强器加入了代理中,那么这样一来;客户端在调用代理的接口中的某个方法的时候,就会先执行RmiClientInterceptor中的invoke方法
+
+
+						getStub(); 获取stub
+							获取stub的时候,如果有缓存,那么就会优先取缓存,如果没有缓存,那么就会生成一个stub
+						doInvoke(invocation, stub);
+							spring远程方法的调用分成两种:
+								1.获取的stub如果是RMIInvocationHandler类型的,从服务端获取的stub是RMIInvocationHandler,就意味着服务端也使用了spring去构建;那么自然会将Spring中作的约定,进行客户端调用处理;spring的处理方式被委托给了doInvoke(invocation, (RmiInvocationHandler) stub);方法
+								2.如果不是RMIInvocationHandler类型的,那么就按照普通的RMI调用方式去调用
+
+
+			HttpInvoker
+				Spring开发小组意识到了RMI服务和基于Http的服务(Hessian和Burlap)之间的空白;
+					1.RMI使用java标准的对象序列化,但是很难穿越防火墙
+					2.hessian和Burlap可以很好穿越防火墙,但是使用自己私有的一套对象序列化机制
+
+				HttpInvoker是一个新的远程调用模型
+					1.执行基于http的远程调用(可以穿越防火墙)
+					2.并使用java的序列化机制
+
+				服务端:
+					HttpInvokerServiceExporter 实现了InitializingBean
+						1.prepare() 创建代理
+							1.getProxyForService() 
+								1.验证service
+								2.验证serviceInterface
+								3.使用JDK的方式创建代理对象
+								4.添加拦截器
+								5.创建代理
+
+						处理来自客户端的request
+						handleRequest(HttpServletRequest request, HttpServletResponse response)
+							1.RemoteInvocation invocation = readRemoteInvocation(request);从request中读取序列化对象
+							2.RemoteInvocationResult result = invokeAndCreateResult(invocation, getProxy()); 反射调用,并且获取返回值
+							3.writeRemoteInvocationResult(request, response, result); 写回客户端
+				客户端调用
+					HttpInvokerProxyFactoryBean 实现了InitializingBean, FactoryBean, MethodInterceptor
+						初始化的过程
+						1.afterPropertiesSet 这个过程与RMI相似
+							1.UrlBasedRemoteAccessor.afterPropertiesSet判断serviceUrl是否存在
+							2.getHttpInvokerRequestExecutor() 设置 httpInvokerReuqestExecutor
+							3.校验serviceInterface
+							4.创建代理对象, 因为HttpInvokerProxyFactoryBean实现了MethodInterceptor; 所以将其自身作为拦截器放入代理中
+
+
+						因为HttpInvokerProxyFactoryBean是FactoryBean, 返回的对象目标类的代理对象,又因为,其作为拦截器的一环参与调用过程
+
+						invoke
+							1.RemoteInvocation invocation = createRemoteInvocation(methodInvocation); 封装成spring统一调用的对象RemoteInvocation
+							2.result = executeRequest(invocation, methodInvocation); 执行请求返回结果
+								1.executeRequest(invocation); 封装请求
+								2.将对象转成输出流,使用httpClient请求
+							3.recreateRemoteInvocationResult(result); 处理返回值
+
+
+		Spring消息
+			java消息服务(java message service, JMS) 应用程序接口是一个java平台中关于面向消息中间件(MOM) 的API; 用于在两个应用程序系统之间或者分布式系统之间发送消息,并进行异步通信;java 消息服务是一个与具体平台无关的API;绝大多数MOM提供商都JMS提供支持
+
+			java消息服务的规范包括两种消息模式,
+				1.点对点
+				2.发布订阅模式
+			许多提供商支持这一通用框架;因此, 程序员可以在他们的分布式软件中实现面向消息的操作,这些操作将具有面向不同中间件产品的可移植性
+
+			java消息支持同步和异步的消息处理
+
+			java消息服务支持面向事件的方法接收消息, 事件驱动的程序设计现在被广泛认为是一种富有成效的程序设计范例
+
+			在应用系统开发的时候,可以选择不同的消息中间件产品, 也可以在不同的面向消息中间件产品之间切换
+
+			本例使用ActiveMQ与Spring的整合
+
+
+			单独使用ActiveMQ
+				在windows系统下,直接双击ActiveMQ安装目录下bin目录中的activemq.bat文件来启动消息中间件
+
+				发送消息:
+					ConnectionFactory connectionFactory = new ActiveMQConnectionFactory();
+					Connection connection = connectionFactory.createConnection();
+					Session session = connection.createSession(Boolean.TRUE, Session.AUTO_ACKNOWLEDGE);
+					Destination destination = session.createQueue("my-queue");
+					MessageProducer producer = session.createProducer(destination);
+					for(int i = 0; i < 3; i++) {
+						TextMessage message = session.createTextMessage("this is test message");
+						Thread.sleep(1000);
+						producer.send(message);
+					}
+
+					session.commit();
+					session.close();
+					connection.close();
+
+
+				接收消息:
+					ConnectionFactory connectionFactory = new ActiveMQConnectionFactory();
+					Connection connection = connectionFactory.createConnection();
+					Session session = connection.createSession(Boolean.TRUE, Session.AUTO_ACKNOWLEDGE);
+					Destination destination = session.createQueue("my-queue");
+					MessageConsumer consumer = session.createConsumer(destination);
+
+					int i = 0;
+					while(i < 3) {
+						i++;
+						TextMessage message = (TextMessage) consumer.receive();
+						session.commit();
+
+						System.out.println("get message " + message.getText());
+					}
+
+					session.close();
+					connection.close();
+
+
+			jms整合spring
+				JmsTemplate
+				JmsTemplate 的作用类似于 JdbcTemplate 和 RedisTemplate
+
+				是将一些通用的代码抽取出来
+				JmsTamplate 实现了 InitializingBean接口
+					1.JmsAccessor重写了afterPropertiesSet方法, 但是只是做了ConnectionFactory的校验工作
+
+				查看发送方法
+					send方法
+						风格与jdbcTemplate很相似, 抽取一个公用的方法, 然后通过回调函数来实现不同的细节
+
+					execute 公用的方法抽取
+					doSend 实现底层细节
+
+				监听器容器 
+					消息监听容器是一个用于查看JMS目标等待消息到达的特殊bean,一旦消息到达它就可以获取消息,并且通过onMessage()方法传递给一个MessageListener
+
+					spring的监听器类型
+						1.SimpleMessageListenerContainer
+							最简单的监听容器,只能处理固定数量的JMS会话,且不支持事务
+							afterPropertiesSet
+								1.validateConfiguration();验证当前的消费者数量是否等于1,是否可预订; 如果不等于,抛出异常
+								2.initialize();
+									1.唤醒监控器
+									2.doInitialize()
+										1.如果不是懒加载,调用establishSharedConnection() 建立连接
+										2.initializeConsumers() 初始化消费者
+						2.DefaultMessageListenerContainer
+							这个监听器是建立在SimpleMessageListenerContainer之上的,添加了事务的支持
+							afterPropertiesSet
+								1.initialize() 
+									1.设置默认缓存
+									2.用于控制声明周期的同步处理
+									3.初始化线程池
+									4.如果没有设置maxMessagesPerTask, 那么就默认为10, 此参数标识支持异步线程的消息数量
+									5.设置是否开启事务
+									6.设置事务定义者的名称	
+								2.doInitialize()
+									1.scheduleNewInvoker();根据当前消费者数量添加监听线程
+									2.rescheduleTaskIfNecessary(invoker); 如果是一个线程监听类,那么开启线程去监听它
+							
+						3.AsyncMessageListenerInvoker 线程对象, run方法
+							1. executeOngoingLoop(); maxMessagesPerTask; // 根据每个任务设置的最大出力消息数量而不同处理, 小于0默认无限制, 一直接受消息
+								1.如果不是运行中,那么循环等待
+								2.正常处理流程调用invokeListener()
+
+									ps:
+										线程等待不是一味的while循环来控制,因为如果的单纯采用while循环会浪费CPU的时钟周期,给资源造成了巨大的浪费,这里spring采用了全局控制变量lifecycleMonitor的wait()方法来暂停线程,所以线程再次恢复的话,除了更改this.running标志位外,还需要调用lifecycleMonitor.notify或者lifecycleMonitor.notifyAll来使线程恢复
+							2. 消息数量控制,一旦超出数量,则停止循环
+							3. invokeListener(); 利用这个方法来激活监听器和接受消息
+								1.initResourcesIfNecessary();  初始化的时候,创建资源session, consumer
+								2.receiveAndExecute(this, this.session, this.consumer); 接收消息
+									1.如果有事务,则处理事务
+									2.doReceiveAndExecute(invoker, session, consumer, null);
+										1.创建session
+										2.Message message = receiveMessage(consumerToUse); 接收消息
+										3.doExecuteListener(sessionToUse, message); 激活监听器
+											1.校验是否停止监听
+											2.invokeListener(session, message); 调用监听
+												1.doInvokeListener((SessionAwareMessageListener) listener, session, message);
+													1.listener.onMessage(message, sessionToUse);
+													2.清除链接
+												2.doInvokeListener((MessageListener) listener, message);
+													listener.onMessage(message);
+											3.commitIfNecessary(session, message); 提交事务,如果需要的话
+										4.关闭资源,清除链接
+
+								MQ的事务包含两个事务:
+									1.通用事务,DefaultMessageListenerContainer添加了事务的支持,是指的数据库的事务
+									2.消息的事务,对于消息而言还有一个事务,当接收一下消息必须使用事务提交的方式,这是在告诉消息服务器本地事务已经正常接收消息,消息服务器接收到本地的事务提交后便可将此消息删除,否则消息可能会被其他消息接受者重新接收
+								
 
 
 
 
 
 
-			
+
+
+
+
+
+
+
+
+
+
+
 
 
 
