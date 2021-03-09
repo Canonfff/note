@@ -1,0 +1,18 @@
+java的并发包下的atomic包下的类
+
+基本类型
+	AtomicInteger
+	AtomicLong
+	AtomicBoolean
+数组类型
+	AtomicIntegerArray
+	AtomicLongArray
+	AtomicReferenceArray
+引用类型
+	AtomicReference
+	AtomicReferenceFieldUpdater
+	AtomicMarkableReference
+字段类型
+	AtomicIntegerFieldUpdater
+	AtomicLongFieldUpdater
+	AtomicStampedFieldUpdater
